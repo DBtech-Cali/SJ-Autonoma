@@ -29,6 +29,8 @@
       return t.charAt(0).toUpperCase() + t.slice(1);
     },
     /* Convierte lo que escriba la persona ("2.156", "$ 2 156") en un entero de pesos/unidades */
+    /* Enlace de imagen válido (solo http/https) */
+    img(u) { return typeof u === 'string' && /^https?:\/\/\S+$/i.test(u.trim()); },
     parse(s) { const d = String(s == null ? '' : s).replace(/\D/g, ''); return d ? parseInt(d, 10) : 0; },
     arr(x) { if (!x) return []; return (Array.isArray(x) ? x : Object.values(x)).filter(Boolean); },
     slug(s) {

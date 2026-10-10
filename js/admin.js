@@ -9,7 +9,7 @@
   const esc = U.esc, money = U.money, P = U.parse;
   const hoy = () => U.fechaStr();
 
-  let tab = 'resumen', unsub = null, tLock = null, tRef = null;
+  let tab = 'resumen', unsub = [], tLock = null, tRef = null, repos = {};
   const ahora = new Date();
   let cal = { y: ahora.getFullYear(), m: ahora.getMonth() }, calDia = hoy(), diaVentas = null;
   let editId = null, anularId = null, cierreCalc = null, desdeTs = 0, cierres = [];
@@ -26,19 +26,25 @@
       if (!filtro(f)) return;
       r.ventas += d.ventas || 0; r.costo += d.costo || 0; r.mermas += d.mermas || 0; r.nVentas += d.nVentas || 0;
     });
-    r.ganancia = r.ventas - r.costo - r.mermas; return r;
+    r.ganancia = r.ventas - r.costo - r.mermas;
+    r.invertido = 0; r.nCompras = 0;
+    Object.values(repos).forEach(c => { if (c && c.fecha && filtro(c.fecha)) { r.invertido += c.total || 0; r.nCompras++; } });
+    return r;
   }
   const errMsg = e => { console.error(e); toast('No se pudo guardar: ' + ((e && e.message) || e), 'error'); };
 
   /* ---------- Ciclo de vida ---------- */
   function entrar() {
     tab = 'resumen'; calDia = hoy(); cal = { y: new Date().getFullYear(), m: new Date().getMonth() }; diaVentas = null;
-    unsub = DB.listen('resumen/dias', v => { S.resumen = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los resúmenes.', 'error'); });
+    unsub = [
+      DB.listen('resumen/dias', v => { S.resumen = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los resúmenes.', 'error'); }),
+      DB.listen('reposiciones', v => { repos = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer las compras.', 'error'); })
+    ];
     bloqueo(); render();
   }
   function salir() {
-    if (unsub) { unsub(); unsub = null; }
-    clearTimeout(tLock); clearTimeout(tRef); S.resumen = {};
+    unsub.forEach(u => { if (u) u(); }); unsub = [];
+    clearTimeout(tLock); clearTimeout(tRef); S.resumen = {}; repos = {};
   }
   function bloqueo() {
     clearTimeout(tLock);
@@ -68,8 +74,13 @@
 
   /* ---------- RESUMEN ---------- */
   function tarjeta(titulo, r) {
-    return `<div class="tarjeta"><h4>${titulo}</h4><div class="gan ${r.ganancia < 0 ? 'neg' : ''}">${money(r.ganancia)}</div>
-      <div class="det">Ganancia · <b>${money(r.ventas)}</b> en ventas · ${r.nVentas} compra${r.nVentas === 1 ? '' : 's'}</div></div>`;
+    return `<div class="tarjeta"><h4>${titulo}</h4>
+      <div class="t-venta">${money(r.ventas)}</div>
+      <div class="det">Ventas · ${r.nVentas} venta${r.nVentas === 1 ? '' : 's'}</div>
+      <div class="t-filas">
+        <div><span>Ganancia</span><b class="gan-s ${r.ganancia < 0 ? 'neg' : ''}">${money(r.ganancia)}</b></div>
+        <div><span>Invertido en compras${r.nCompras ? ` <small>(${r.nCompras})</small>` : ''}</span><b class="inv-s">${money(r.invertido)}</b></div>
+      </div></div>`;
   }
   function listaUrgente() {
     const u = urgentes();
@@ -82,7 +93,7 @@
     const h = suma(f => f === hoy()), m = suma(f => f.startsWith(mesK)), g = suma(() => true);
     const sinCosto = prods().filter(p => p.activo !== false && !(p.costo > 0));
     return `<div class="tarjetas">${tarjeta('Hoy', h)}${tarjeta('Este mes', m)}${tarjeta('Total acumulado', g)}</div>
-      <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes).</p>
+      <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes). Invertido = total de las compras de reposición registradas.</p>
       ${sinCosto.length ? `<div class="alerta-caja">⚠ ${sinCosto.length} producto${sinCosto.length === 1 ? '' : 's'} sin costo: la ganancia se ve más alta de lo real hasta completarlos.
         <button class="btn btn-sec btn-peq" data-accion="a:tab" data-tab="productos">Completar costos</button></div>` : ''}
       <h3>Urgente reponer</h3>${listaUrgente()}
@@ -244,7 +255,7 @@
       if (p.categoria !== catAct) { catAct = p.categoria; filas += `<tr class="cat-fila"><td colspan="6">${esc(CATN[catAct] || catAct)}</td></tr>`; }
       const marg = (p.precio || 0) - (p.costo || 0);
       filas += `<tr class="${p.activo === false ? 'inactivo' : ''}" data-n="${esc(String(p.nombre).toLowerCase())}">
-        <td>${esc(p.nombre)} ${p.activo === false ? '<span class="etq gris">No visible</span>' : ''}</td>
+        <td><span class="p-celda">${U.img(p.imagen) ? `<img class="p-mini" src="${esc(p.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="p-mini p-mini-vacia"></span>'}<span>${esc(p.nombre)} ${p.activo === false ? '<span class="etq gris">No visible</span>' : ''}</span></span></td>
         <td class="num">${money(p.precio)}</td>
         <td class="num">${p.costo > 0 ? money(p.costo) : '<span class="etq warn">Sin costo</span>'}</td>
         <td class="num">${p.costo > 0 ? money(marg) : '—'}</td><td class="num">${p.stock || 0}</td>
@@ -262,6 +273,8 @@
     if (!p) return;
     Modal.abrir(`<h2>${nuevo ? 'Nuevo producto' : 'Editar producto'}</h2><div class="form">
       <label>Nombre<input id="f-nombre" value="${esc(p.nombre)}" autofocus></label>
+      <div class="f-imagen"><span class="f-prev" id="f-prev">${U.img(p.imagen) ? `<img src="${esc(p.imagen)}" alt="" referrerpolicy="no-referrer">` : ''}</span>
+      <label>Imagen (enlace, opcional)<input id="f-img" type="url" inputmode="url" placeholder="https://…/foto.jpg" value="${esc(p.imagen || '')}"></label></div>
       <label>Categoría<select id="f-cat">${ORDEN.map(c => `<option value="${c}" ${p.categoria === c ? 'selected' : ''}>${CATN[c]}</option>`).join('')}</select></label>
       <div class="fila2"><label>Precio de venta<input id="f-precio" inputmode="numeric" value="${p.precio === '' ? '' : (p.precio || 0)}"></label>
       <label>Costo (lo que cuesta)<input id="f-costo" inputmode="numeric" value="${p.costo === '' ? '' : (p.costo || 0)}"></label></div>
@@ -277,7 +290,9 @@
     if (!nombre) { err.textContent = 'Escriba el nombre del producto.'; return; }
     const dup = Object.entries(S.productos).some(([id, p]) => id !== editId && String(p.nombre).trim().toLowerCase() === nombre.toLowerCase());
     if (dup) { err.textContent = 'Ya existe un producto con ese nombre.'; return; }
-    const d = { nombre, categoria: $('#f-cat').value, precio: P($('#f-precio').value), costo: P($('#f-costo').value), minimo: P($('#f-min').value), activo: $('#f-activo').checked };
+    const imagen = $('#f-img').value.trim();
+    if (imagen && !U.img(imagen)) { err.textContent = 'El enlace de la imagen debe empezar por https:// o http://'; return; }
+    const d = { nombre, imagen: imagen || null, categoria: $('#f-cat').value, precio: P($('#f-precio').value), costo: P($('#f-costo').value), minimo: P($('#f-min').value), activo: $('#f-activo').checked };
     try {
       const upd = {};
       if (!editId) { const k = DB.newKey('productos'); upd['productos/' + k] = Object.assign({}, d, { stock: P($('#f-stock').value) }); }
@@ -490,6 +505,7 @@
   document.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'c-retiros' || t.id === 'c-contado') actualizarDif();
+    else if (t.id === 'f-img') { const v = t.value.trim(), pv = $('#f-prev'); if (pv) pv.innerHTML = U.img(v) ? `<img src="${esc(v)}" alt="" referrerpolicy="no-referrer">` : ''; }
     else if (t.id === 'buscar-prod') { const q = t.value.toLowerCase(); $$('#admin-contenido tbody tr[data-n]').forEach(tr => { tr.hidden = !tr.dataset.n.includes(q); }); }
     else if (t.id === 'buscar-compra') { const q = t.value.toLowerCase(); $$('.fila-compra').forEach(tr => { tr.hidden = !tr.dataset.n.includes(q); }); }
   });

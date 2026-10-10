@@ -108,7 +108,12 @@ b,strong{font-weight:650}
   min-height:124px;padding:16px;background:var(--sup);border-radius:var(--rad);box-shadow:var(--sombra);text-align:left;
   transition:transform .12s ease,box-shadow .15s}
 .prod:active:not(:disabled){transform:scale(.97)}
-.prod-nombre{font-weight:600;font-size:17px;line-height:1.2;padding-right:30px;flex:1}
+.prod-img{flex-shrink:0;align-self:stretch;height:84px;margin:-4px -4px 6px;border-radius:12px;background:var(--sup2);overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.prod-img img{max-width:100%;max-height:100%;object-fit:contain}
+.prod.agotado .prod-img img{filter:grayscale(1);opacity:.6}
+.prod.conImg{min-height:218px}
+.prod-nombre{font-weight:600;font-size:17px;line-height:1.2;padding-right:30px;flex:1 0 auto}
 .prod-precio{font-size:22px;font-weight:700;letter-spacing:-.02em;color:var(--tx)}
 .prod-stock{font-size:13px;color:var(--gris);font-weight:600;min-height:17px}
 .prod-stock.bajo{color:var(--warn)}
@@ -218,7 +223,8 @@ b,strong{font-weight:650}
 .form input,.form select,.form-l input,.form-l textarea,.buscar,.mini-in{min-height:44px;padding:11px 14px;border:1px solid var(--sep);
   border-radius:12px;background:var(--sup2);color:var(--tx);font-weight:500;font-size:17px;transition:border-color .12s,box-shadow .12s}
 .form input:focus,.form select:focus,.form-l input:focus,.form-l textarea:focus,.buscar:focus,.mini-in:focus{outline:none;border-color:var(--acento);box-shadow:var(--anillo)}
-.fila2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fila2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.form input,.form select{width:100%;min-width:0}
 .chk{flex-direction:row!important;align-items:center;gap:12px!important;color:var(--tx)!important;font-size:16px!important}
 .chk input{width:22px;height:22px;min-height:0;padding:0;accent-color:var(--acento-boton)}
 .buscar{width:100%;margin:8px 0 12px}
@@ -242,10 +248,15 @@ b,strong{font-weight:650}
 .tarjetas{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
 .tarjeta{background:var(--sup);border-radius:var(--rad);padding:18px 20px;box-shadow:var(--sombra)}
 .tarjeta h4{color:var(--gris);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
-.tarjeta .gan{font-size:34px;font-weight:700;letter-spacing:-.03em;color:var(--ok);margin:6px 0 4px}
-.tarjeta .gan.neg{color:var(--mal)}
+.tarjeta .t-venta{font-size:34px;font-weight:700;letter-spacing:-.03em;margin:6px 0 0;font-variant-numeric:tabular-nums}
 .tarjeta .det{color:var(--gris);font-size:15px}
-.tarjeta .det b{color:var(--tx)}
+.t-filas{margin-top:14px;border-top:1px solid var(--sep)}
+.t-filas div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0 0}
+.t-filas span{color:var(--gris);font-size:15px}
+.t-filas b{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+.t-filas .gan-s{color:var(--ok)}
+.t-filas .gan-s.neg{color:var(--mal)}
+.t-filas .inv-s{color:var(--warn)}
 .alerta-caja{background:var(--warnbg);color:var(--warn);border-radius:var(--rad-s);padding:12px 16px;margin:14px 0;font-weight:600;
   display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .alerta-caja .btn{margin-left:auto}
@@ -266,6 +277,14 @@ b,strong{font-weight:650}
 .tabla .acc{white-space:nowrap;text-align:right}
 .panel .tabla{box-shadow:none;border:1px solid var(--sep)}
 
+.p-celda{display:flex;align-items:center;gap:12px}
+.p-mini{flex-shrink:0;width:40px;height:40px;border-radius:10px;object-fit:contain;background:var(--sup2)}
+.p-mini-vacia{display:block;border:1px dashed var(--sep)}
+.f-imagen{display:flex;gap:14px;align-items:flex-end}
+.f-imagen label{flex:1}
+.f-prev{flex-shrink:0;width:72px;height:72px;border-radius:14px;background:var(--sup2);border:1px dashed var(--sep);overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.f-prev img{max-width:100%;max-height:100%;object-fit:contain}
 .etq{display:inline-block;padding:3px 10px;border-radius:999px;font-size:13px;font-weight:650}
 .etq.ok{background:var(--okbg);color:var(--ok)}
 .etq.warn{background:var(--warnbg);color:var(--warn)}
@@ -321,6 +340,8 @@ b,strong{font-weight:650}
   .total-fila strong{font-size:30px}
   .marca p{display:none}
   .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .prod-img{height:70px}
+  .prod.conImg{min-height:196px}
   .fila2{grid-template-columns:1fr}
   .dia{min-height:62px;padding:5px}
   .dia .v,.dia .g{font-size:11px}

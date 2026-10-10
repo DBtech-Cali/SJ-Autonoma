@@ -64,6 +64,13 @@
     if (acc.startsWith('s:')) Store.accion(acc.slice(2), a, e);
     else if (acc.startsWith('a:')) Admin.accion(acc.slice(2), a, e);
   });
+  /* Si el enlace de una imagen de producto no carga, se oculta en lugar de mostrar un ícono roto */
+  document.addEventListener('error', e => {
+    const img = e.target;
+    if (img.tagName !== 'IMG') return;
+    const caja = img.closest('.prod-img');
+    if (caja) { caja.closest('.prod').classList.remove('conImg'); caja.remove(); } else img.style.visibility = 'hidden';
+  }, true);
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.dataset && e.target.dataset.enter) {
       const b = document.querySelector('[data-accion="' + e.target.dataset.enter + '"]'); if (b) b.click();

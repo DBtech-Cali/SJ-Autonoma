@@ -35,8 +35,9 @@
     const q = cart[p.id] || 0, stock = p.stock || 0;
     const ago = stock <= 0, sin = !(p.precio > 0), bajo = !ago && stock <= (p.minimo || 0);
     const estado = ago ? 'Agotado' : sin ? 'Sin precio' : bajo ? 'Quedan ' + stock : '';
-    return `<button class="prod ${ago || sin ? 'agotado' : ''} ${q ? 'enCarro' : ''}" data-accion="s:add" data-id="${p.id}" ${ago || sin ? 'disabled' : ''}>
-      <span class="prod-nombre">${esc(p.nombre)}</span>
+    const img = U.img(p.imagen) ? `<span class="prod-img"><img src="${esc(p.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer"></span>` : '';
+    return `<button class="prod ${ago || sin ? 'agotado' : ''} ${q ? 'enCarro' : ''} ${img ? 'conImg' : ''}" data-accion="s:add" data-id="${p.id}" ${ago || sin ? 'disabled' : ''}>
+      ${img}<span class="prod-nombre">${esc(p.nombre)}</span>
       <span class="prod-precio">${sin ? '—' : money(p.precio)}</span>
       <span class="prod-stock ${bajo ? 'bajo' : ''}">${estado}</span>
       ${q ? `<span class="prod-cant">${q}</span>` : ''}
