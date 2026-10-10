@@ -24,7 +24,7 @@ window.TSJ_CONFIG = {
 
   // Clave del administrador, guardada como código (SHA-256), no como texto.
   // Clave PROVISIONAL: tienda2026   -> cámbiela abriendo generar-clave.html
-  claveAdminHash: '3e01f3708b4dda9da8b984bcd792618d6b81d88aa1182e3ba87212ada3e341c8',
+  claveAdminHash: '9b9b81af02c3d56066e4690c9cdd438982c71009b3c3a17aee2b82a979eea0bc',
 
   // Billetes que aparecen para calcular el cambio
   billetes: [2000, 5000, 10000, 20000, 50000],
