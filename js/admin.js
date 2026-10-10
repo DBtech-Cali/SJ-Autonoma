@@ -5,7 +5,7 @@
   const ORDEN = ['bebidas', 'mecato', 'dulces', 'sal'];
   const CATN = { bebidas: 'Bebidas', mecato: 'Mecato', dulces: 'Dulces', sal: 'Sal' };
   const TABS = [['resumen', 'Resumen'], ['calendario', 'Calendario'], ['inventario', 'Inventario'], ['productos', 'Productos'],
-    ['trabajadores', 'Trabajadores'], ['cierre', 'Cierre semanal'], ['respaldo', 'Respaldo']];
+    ['trabajadores', 'Trabajadores'], ['consumo', 'Consumo'], ['cierre', 'Cierre semanal'], ['respaldo', 'Respaldo']];
   const esc = U.esc, money = U.money, P = U.parse;
   const hoy = () => U.fechaStr();
 
@@ -13,6 +13,7 @@
   const ahora = new Date();
   let cal = { y: ahora.getFullYear(), m: ahora.getMonth() }, calDia = hoy(), diaVentas = null;
   let editId = null, anularId = null, cierreCalc = null, desdeTs = 0, cierres = [];
+  let rep = { y: ahora.getFullYear(), m: ahora.getMonth() }, repDatos = null, repCodigo = null;
 
   /* ---------- Datos derivados ---------- */
   const prods = () => Object.entries(S.productos).map(([id, p]) => Object.assign({ id }, p))
@@ -36,6 +37,7 @@
   /* ---------- Ciclo de vida ---------- */
   function entrar() {
     tab = 'resumen'; calDia = hoy(); cal = { y: new Date().getFullYear(), m: new Date().getMonth() }; diaVentas = null;
+    rep = { y: cal.y, m: cal.m }; repDatos = null;
     unsub = [
       DB.listen('resumen/dias', v => { S.resumen = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los resúmenes.', 'error'); }),
       DB.listen('reposiciones', v => { repos = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer las compras.', 'error'); })
@@ -66,7 +68,8 @@
     $('#admin-tabs').innerHTML = TABS.map(([k, n]) => `<button class="admin-tab ${k === tab ? 'act' : ''}" data-accion="a:tab" data-tab="${k}">${n}</button>`).join('');
     const cont = $('#admin-contenido');
     cont.innerHTML = ({ resumen: vResumen, calendario: vCalendario, inventario: vInventario, productos: vProductos,
-      trabajadores: vTrabajadores, cierre: vCierre, respaldo: vRespaldo })[tab]();
+      trabajadores: vTrabajadores, consumo: vConsumo, cierre: vCierre, respaldo: vRespaldo })[tab]();
+    if (tab === 'consumo') cargarConsumo();
     if (tab === 'calendario') cargarDia();
     if (tab === 'cierre') iniciarCierre();
     if (tab === 'trabajadores') DB.get('trabajadores').then(v => { S.trabajadores = v || {}; });
@@ -341,6 +344,101 @@
     } catch (e) { errMsg(e); }
   }
 
+  /* ---------- CONSUMO POR TRABAJADOR (reporte mensual) ---------- */
+  const mesClave = () => rep.y + '-' + U.pad(rep.m + 1);
+  function nombreMesRep() {
+    const t = new Date(rep.y, rep.m, 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' }).replace(' de ', ' ');
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  /* Categoría de un ítem vendido: la guardada en la venta o, para ventas anteriores, la del producto actual */
+  const catItem = i => i.categoria || (S.productos[i.id] || {}).categoria || 'otros';
+  const catNombre = c => CATN[c] || 'Otros';
+  function agruparConsumo(ventas) {
+    const personas = {};
+    ventas.forEach(v => {
+      const k = v.codigo || '?';
+      const p = personas[k] || (personas[k] = { codigo: k, nombre: v.nombre, tipo: v.tipo, total: 0, nCompras: 0, cats: {}, productos: {} });
+      p.nombre = v.nombre || p.nombre; p.nCompras++;
+      U.arr(v.items).forEach(i => {
+        const c = catItem(i), sub = (i.precio || 0) * (i.cantidad || 0);
+        p.cats[c] = (p.cats[c] || 0) + sub; p.total += sub;
+        const pr = p.productos[i.id || i.nombre] || (p.productos[i.id || i.nombre] = { nombre: i.nombre, categoria: c, cantidad: 0, total: 0 });
+        pr.cantidad += i.cantidad || 0; pr.total += sub;
+      });
+    });
+    return Object.values(personas).sort((a, b) => b.total - a.total);
+  }
+  function vConsumo() {
+    return `<div class="cal-enc"><button class="btn btn-sec btn-peq" data-accion="a:repMes" data-d="-1" aria-label="Mes anterior">◀</button><h2>${esc(nombreMesRep())}</h2>
+      <button class="btn btn-sec btn-peq" data-accion="a:repMes" data-d="1" aria-label="Mes siguiente">▶</button></div>
+      <p class="nota" style="margin-top:0">Cuánto compró cada persona en el mes, por categoría. Toque un nombre para ver el detalle, imprimirlo o compartirlo.</p>
+      <div id="rep-cont">${repDatos && repDatos.mes === mesClave() ? tablaConsumo() : '<p class="nota">Cargando…</p>'}</div>`;
+  }
+  async function cargarConsumo() {
+    const mes = mesClave();
+    try {
+      const v = await DB.query('ventas', { orderBy: 'fecha', startAt: mes + '-01', endAt: mes + '-31' });
+      if (mes !== mesClave() || tab !== 'consumo') return;
+      const ventas = Object.values(v || {}).filter(x => x && x.estado === 'activa' && String(x.fecha).startsWith(mes));
+      repDatos = { mes, personas: agruparConsumo(ventas) };
+      const c = $('#rep-cont'); if (c) c.innerHTML = tablaConsumo();
+    } catch (e) { console.error(e); const c = $('#rep-cont'); if (c) c.innerHTML = '<p class="nota">No se pudieron cargar las ventas del mes.</p>'; }
+  }
+  function columnasCat() {
+    const cols = ORDEN.slice();
+    if (repDatos.personas.some(p => p.cats.otros)) cols.push('otros');
+    return cols;
+  }
+  function tablaConsumo() {
+    const ps = repDatos.personas;
+    if (!ps.length) return '<div class="panel"><p class="nota" style="margin:0">No hubo compras en este mes.</p></div>';
+    const cols = columnasCat(), tot = { total: 0, nCompras: 0, cats: {} };
+    ps.forEach(p => { tot.total += p.total; tot.nCompras += p.nCompras; cols.forEach(c => { tot.cats[c] = (tot.cats[c] || 0) + (p.cats[c] || 0); }); });
+    const celda = (n, t) => `<td class="num">${n ? money(n) : '<span class="gris">—</span>'}${n && t ? `<small class="pct">${Math.round(n * 100 / t)}%</small>` : ''}</td>`;
+    return `<div class="tarjetas rep-tarjetas">
+        <div class="tarjeta"><h4>Total del mes</h4><div class="t-venta">${money(tot.total)}</div><div class="det">${ps.length} persona${ps.length === 1 ? '' : 's'} · ${tot.nCompras} compra${tot.nCompras === 1 ? '' : 's'}</div></div>
+        ${cols.map(c => `<div class="tarjeta"><h4>${esc(catNombre(c))}</h4><div class="t-venta t-cat">${money(tot.cats[c] || 0)}</div>
+          <div class="det">${tot.total ? Math.round((tot.cats[c] || 0) * 100 / tot.total) : 0}% del total</div></div>`).join('')}
+      </div>
+      <div style="overflow:auto;margin-top:16px"><table class="tabla tabla-rep"><thead><tr><th>Persona</th>${cols.map(c => `<th class="num">${esc(catNombre(c))}</th>`).join('')}<th class="num">Total</th><th class="num">Compras</th></tr></thead><tbody>
+      ${ps.map(p => `<tr class="fila-click" data-accion="a:repDetalle" data-id="${esc(p.codigo)}"><td><b>${esc(p.nombre)}</b> <small class="gris">#${esc(p.codigo)}</small>${p.tipo === 'visita' ? ' <span class="etq gris">Visita</span>' : ''}</td>
+        ${cols.map(c => celda(p.cats[c], p.total)).join('')}<td class="num"><b>${money(p.total)}</b></td><td class="num">${p.nCompras}</td></tr>`).join('')}
+      <tr class="cat-fila"><td>Total</td>${cols.map(c => `<td class="num">${money(tot.cats[c] || 0)}</td>`).join('')}<td class="num">${money(tot.total)}</td><td class="num">${tot.nCompras}</td></tr>
+      </tbody></table></div>
+      <div class="barra" style="margin-top:14px"><button class="btn btn-sec" data-accion="a:repCsv">⬇ Descargar el mes (Excel/CSV)</button></div>`;
+  }
+  function modalConsumo(codigo) {
+    const p = repDatos && repDatos.personas.find(x => x.codigo === codigo); if (!p) return;
+    repCodigo = codigo;
+    const prods = Object.values(p.productos), cats = ORDEN.concat(prods.some(x => x.categoria === 'otros') ? ['otros'] : []).filter(c => p.cats[c]);
+    const max = Math.max(1, ...cats.map(c => p.cats[c]));
+    Modal.abrir(`<div class="rep-detalle"><p class="eyebrow">Consumo de ${esc(nombreMesRep())}</p><h2>${esc(p.nombre)}</h2>
+      <div class="gran-total"><span>Total gastado en la tienda</span><strong>${money(p.total)}</strong><small class="gris">${p.nCompras} compra${p.nCompras === 1 ? '' : 's'} en el mes</small></div>
+      <div class="barras-cat">${cats.map(c => `<div class="bc-fila"><span class="bc-nom">${esc(catNombre(c))}</span>
+        <span class="bc-pista"><span class="bc-barra" style="width:${Math.max(3, Math.round(p.cats[c] * 100 / max))}%"></span></span>
+        <b class="bc-val">${money(p.cats[c])}</b><small class="bc-pct">${Math.round(p.cats[c] * 100 / p.total)}%</small></div>`).join('')}</div>
+      <div class="scroll-modal" style="margin-top:12px"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Cant.</th><th class="num">Total</th></tr></thead><tbody>
+      ${cats.map(c => `<tr class="cat-fila"><td colspan="3">${esc(catNombre(c))}</td></tr>` + prods.filter(x => x.categoria === c).sort((a, b) => b.total - a.total)
+        .map(x => `<tr><td>${esc(x.nombre)}</td><td class="num">${x.cantidad}</td><td class="num">${money(x.total)}</td></tr>`).join('')).join('')}
+      </tbody></table></div></div>
+      <div class="acciones"><button class="btn btn-sec" data-accion="a:repCsvPersona">⬇ CSV</button><button class="btn btn-sec" data-accion="a:repImprimir">Imprimir</button>
+      <button class="btn btn-prim" data-accion="cerrar">Listo</button></div>`, { ancho: 560 });
+  }
+  function csvConsumo(soloCodigo) {
+    if (!repDatos) return;
+    const cols = columnasCat();
+    if (soloCodigo) {
+      const p = repDatos.personas.find(x => x.codigo === soloCodigo); if (!p) return;
+      const filas = [['Mes', 'Código', 'Nombre', 'Categoría', 'Producto', 'Cantidad', 'Total']];
+      Object.values(p.productos).forEach(x => filas.push([repDatos.mes, p.codigo, p.nombre, catNombre(x.categoria), x.nombre, x.cantidad, x.total]));
+      U.descargar('consumo-' + repDatos.mes + '-' + U.slug(p.nombre) + '.csv', csv(filas), 'text/csv;charset=utf-8');
+      return;
+    }
+    const filas = [['Mes', 'Código', 'Nombre'].concat(cols.map(catNombre), ['Total', 'Compras'])];
+    repDatos.personas.forEach(p => filas.push([repDatos.mes, p.codigo, p.nombre].concat(cols.map(c => p.cats[c] || 0), [p.total, p.nCompras])));
+    U.descargar('consumo-' + repDatos.mes + '.csv', csv(filas), 'text/csv;charset=utf-8');
+  }
+
   /* ---------- CIERRE SEMANAL ---------- */
   function vCierre() {
     return `<h2>Cierre de caja semanal</h2>
@@ -484,6 +582,11 @@
       case 'editTrab': modalTrab(el.dataset.id); break;
       case 'guardarTrab': guardarTrab(); break;
       case 'delTrab': if (confirm('¿Eliminar a ' + (S.trabajadores[el.dataset.id] || {}).nombre + '? Sus ventas anteriores se conservan.')) DB.update({ ['trabajadores/' + el.dataset.id]: null }).then(() => { delete S.trabajadores[el.dataset.id]; render(); }).catch(errMsg); break;
+      case 'repMes': { rep.m += Number(el.dataset.d); if (rep.m < 0) { rep.m = 11; rep.y--; } if (rep.m > 11) { rep.m = 0; rep.y++; } render(); break; }
+      case 'repDetalle': modalConsumo(el.dataset.id); break;
+      case 'repCsv': csvConsumo(); break;
+      case 'repCsvPersona': csvConsumo(repCodigo); break;
+      case 'repImprimir': window.print(); break;
       case 'calcCierre': calcularCierre(); break;
       case 'guardarCierre': guardarCierre(); break;
       case 'json': json().catch(errMsg); break;

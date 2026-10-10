@@ -18,7 +18,7 @@
   function lineas() {
     return Object.entries(cart).map(([id, q]) => {
       const p = S.productos[id];
-      return p ? { id, nombre: p.nombre, cantidad: q, precio: p.precio || 0, costo: p.costo || 0, stock: p.stock || 0 } : null;
+      return p ? { id, nombre: p.nombre, categoria: p.categoria || '', cantidad: q, precio: p.precio || 0, costo: p.costo || 0, stock: p.stock || 0 } : null;
     }).filter(Boolean);
   }
   const total = () => lineas().reduce((a, l) => a + l.precio * l.cantidad, 0);
@@ -179,7 +179,7 @@
     const fecha = U.fechaStr(), ts = Date.now(), key = DB.newKey('ventas');
     const venta = {
       fecha, ts, codigo: flujo.codigo, nombre: flujo.trab.nombre, tipo: flujo.trab.tipo || 'trabajador',
-      items: ls.map(l => ({ id: l.id, nombre: l.nombre, cantidad: l.cantidad, precio: l.precio, costo: l.costo })),
+      items: ls.map(l => ({ id: l.id, nombre: l.nombre, categoria: l.categoria, cantidad: l.cantidad, precio: l.precio, costo: l.costo })),
       total: t, costo, ganancia: t - costo, pago, cambio: pago - t, estado: 'activa'
     };
     const upd = {};

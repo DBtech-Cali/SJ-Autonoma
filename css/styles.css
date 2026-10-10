@@ -298,6 +298,23 @@ b,strong{font-weight:650}
 .urg b{display:block}
 .urg span{color:var(--gris);font-size:14px}
 
+/* ---------- Consumo por trabajador ---------- */
+.rep-tarjetas{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.rep-tarjetas .tarjeta:first-child{grid-column:span 2}
+.rep-tarjetas .t-cat{font-size:24px}
+.tabla-rep td.num small.pct{display:block;color:var(--gris);font-size:12px;font-weight:500}
+.fila-click{cursor:pointer}
+.fila-click:active td{background:var(--sup2)}
+.eyebrow{color:var(--gris);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.rep-detalle .gran-total small{display:block;margin-top:2px}
+.barras-cat{display:flex;flex-direction:column;gap:10px;margin:14px 0 4px}
+.bc-fila{display:grid;grid-template-columns:76px minmax(0,1fr) 92px 40px;align-items:center;gap:10px}
+.bc-nom{font-weight:600;font-size:15px}
+.bc-pista{height:12px;border-radius:999px;background:var(--relleno);overflow:hidden}
+.bc-barra{display:block;height:100%;border-radius:999px;background:var(--acento-boton)}
+.bc-val{font-variant-numeric:tabular-nums;text-align:right}
+.bc-pct{color:var(--gris);text-align:right;font-variant-numeric:tabular-nums}
+
 /* ---------- Calendario ---------- */
 .cal-enc{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
 .cal-enc h2{margin:0}
@@ -390,4 +407,15 @@ b,strong{font-weight:650}
 @media (prefers-reduced-transparency:reduce){
   .encabezado{background:var(--sup);-webkit-backdrop-filter:none;backdrop-filter:none}
   .modal,.toast{-webkit-backdrop-filter:none;backdrop-filter:none}
+}
+
+/* Impresión: solo el contenido de la ventana abierta (ej. reporte de consumo) */
+@media print{
+  html,body{height:auto;overflow:visible;background:#fff;color:#000}
+  body>*:not(#modal){display:none!important}
+  .modal{position:static;display:block;padding:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;animation:none}
+  .modal-caja{max-width:none!important;max-height:none;box-shadow:none;border-radius:0;padding:0;animation:none}
+  .modal-caja .acciones{display:none}
+  .scroll-modal{max-height:none;overflow:visible}
+  .bc-barra{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
