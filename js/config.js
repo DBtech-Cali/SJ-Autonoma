@@ -11,11 +11,11 @@ window.TSJ_CONFIG = {
   // Pegue aquí los datos de su proyecto de Firebase (Configuración del proyecto > Tus apps > Web).
   // databaseURL se ve en Realtime Database (arriba de los datos).
   firebase: {
-    apiKey: 'PEGAR_AQUI',
-    authDomain: 'TU-PROYECTO.firebaseapp.com',
-    databaseURL: 'https://TU-PROYECTO-default-rtdb.firebaseio.com',
-    projectId: 'TU-PROYECTO',
-    appId: 'PEGAR_AQUI'
+    apiKey: 'AIzaSyBBGIpDb5j5L0SlSvyAFTAmxqlWOIMNmO0',
+    authDomain: 'storesj-34fcf.firebaseapp.com',
+    databaseURL: 'https://storesj-34fcf-default-rtdb.firebaseio.com',
+    projectId: 'storesj-34fcf',
+    appId: '1:1059442165718:web:1c6c50f38ff917b1da4677'
   },
 
   // true  = la tablet inicia sesión anónima en Firebase (requiere activar "Anónimo" en Authentication)
