@@ -5,11 +5,12 @@
   const ORDEN = ['bebidas', 'mecato', 'dulces', 'sal'];
   const CATN = { bebidas: 'Bebidas', mecato: 'Mecato', dulces: 'Dulces', sal: 'Sal' };
   const TABS = [['resumen', 'Resumen'], ['calendario', 'Calendario'], ['inventario', 'Inventario'], ['productos', 'Productos'],
-    ['trabajadores', 'Trabajadores'], ['consumo', 'Consumo'], ['cierre', 'Cierre semanal'], ['respaldo', 'Respaldo']];
+    ['trabajadores', 'Trabajadores'], ['consumo', 'Consumo'], ['pastoral', 'Pastoral'], ['cierre', 'Cierre semanal'], ['respaldo', 'Respaldo']];
   const esc = U.esc, money = U.money, P = U.parse;
   const hoy = () => U.fechaStr();
 
-  let tab = 'resumen', unsub = [], tLock = null, tRef = null, repos = {};
+  let tab = 'resumen', unsub = [], tLock = null, tRef = null, repos = {}, pastoral = {};
+  let past = { y: new Date().getFullYear(), m: new Date().getMonth() };
   const ahora = new Date();
   let cal = { y: ahora.getFullYear(), m: ahora.getMonth() }, calDia = hoy(), diaVentas = null;
   let editId = null, anularId = null, cierreCalc = null, desdeTs = 0, cierres = [];
@@ -30,23 +31,36 @@
     r.ganancia = r.ventas - r.costo - r.mermas;
     r.invertido = 0; r.nCompras = 0;
     Object.values(repos).forEach(c => { if (c && c.fecha && filtro(c.fecha)) { r.invertido += c.total || 0; r.nCompras++; } });
+    r.pastoral = 0; r.nPastoral = 0;
+    pastoralesActivos().forEach(g => { if (filtro(g.fecha)) { r.pastoral += g.monto || 0; r.nPastoral++; } });
+    r.disponible = r.ganancia - r.pastoral;
     return r;
+  }
+  const pastoralesActivos = () => Object.entries(pastoral).map(([id, g]) => Object.assign({ id }, g)).filter(g => g && g.fecha && g.estado !== 'anulado');
+  /* Totales por día de compras y gastos pastorales (para el calendario) */
+  function porDia(mesK) {
+    const d = {};
+    const de = f => d[f] || (d[f] = { compras: 0, pastoral: 0 });
+    Object.values(repos).forEach(c => { if (c && c.fecha && c.fecha.startsWith(mesK)) de(c.fecha).compras += c.total || 0; });
+    pastoralesActivos().forEach(g => { if (g.fecha.startsWith(mesK)) de(g.fecha).pastoral += g.monto || 0; });
+    return d;
   }
   const errMsg = e => { console.error(e); toast('No se pudo guardar: ' + ((e && e.message) || e), 'error'); };
 
   /* ---------- Ciclo de vida ---------- */
   function entrar() {
     tab = 'resumen'; calDia = hoy(); cal = { y: new Date().getFullYear(), m: new Date().getMonth() }; diaVentas = null;
-    rep = { y: cal.y, m: cal.m }; repDatos = null;
+    rep = { y: cal.y, m: cal.m }; repDatos = null; past = { y: cal.y, m: cal.m };
     unsub = [
       DB.listen('resumen/dias', v => { S.resumen = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los resúmenes.', 'error'); }),
-      DB.listen('reposiciones', v => { repos = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer las compras.', 'error'); })
+      DB.listen('reposiciones', v => { repos = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer las compras.', 'error'); }),
+      DB.listen('pastoral', v => { pastoral = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los gastos pastorales.', 'error'); })
     ];
     bloqueo(); render();
   }
   function salir() {
     unsub.forEach(u => { if (u) u(); }); unsub = [];
-    clearTimeout(tLock); clearTimeout(tRef); S.resumen = {}; repos = {};
+    clearTimeout(tLock); clearTimeout(tRef); S.resumen = {}; repos = {}; pastoral = {};
   }
   function bloqueo() {
     clearTimeout(tLock);
@@ -57,6 +71,7 @@
   function refrescar() {
     if (S.vista !== 'admin') return;
     if (tab === 'cierre' || tab === 'respaldo') return;      // formularios largos: no se redibujan solos
+    if (tab === 'pastoral' && ($('#gp-monto') || {}).value) return;   // no borrar un gasto a medio escribir
     const f = document.activeElement;
     if (f && f.matches && f.matches('input,select,textarea') && $('#admin-contenido').contains(f)) return;
     clearTimeout(tRef); tRef = setTimeout(render, 80);
@@ -68,7 +83,7 @@
     $('#admin-tabs').innerHTML = TABS.map(([k, n]) => `<button class="admin-tab ${k === tab ? 'act' : ''}" data-accion="a:tab" data-tab="${k}">${n}</button>`).join('');
     const cont = $('#admin-contenido');
     cont.innerHTML = ({ resumen: vResumen, calendario: vCalendario, inventario: vInventario, productos: vProductos,
-      trabajadores: vTrabajadores, consumo: vConsumo, cierre: vCierre, respaldo: vRespaldo })[tab]();
+      trabajadores: vTrabajadores, consumo: vConsumo, pastoral: vPastoral, cierre: vCierre, respaldo: vRespaldo })[tab]();
     if (tab === 'consumo') cargarConsumo();
     if (tab === 'calendario') cargarDia();
     if (tab === 'cierre') iniciarCierre();
@@ -76,13 +91,15 @@
   }
 
   /* ---------- RESUMEN ---------- */
-  function tarjeta(titulo, r) {
+  function tarjeta(titulo, r, conSaldo) {
     return `<div class="tarjeta"><h4>${titulo}</h4>
       <div class="t-venta">${money(r.ventas)}</div>
       <div class="det">Ventas · ${r.nVentas} venta${r.nVentas === 1 ? '' : 's'}</div>
       <div class="t-filas">
         <div><span>Ganancia</span><b class="gan-s ${r.ganancia < 0 ? 'neg' : ''}">${money(r.ganancia)}</b></div>
         <div><span>Invertido en compras${r.nCompras ? ` <small>(${r.nCompras})</small>` : ''}</span><b class="inv-s">${money(r.invertido)}</b></div>
+        <div><span>Gasto pastoral${r.nPastoral ? ` <small>(${r.nPastoral})</small>` : ''}</span><b class="past-s">${money(r.pastoral)}</b></div>
+        ${conSaldo ? `<div class="t-saldo"><span>Utilidad disponible</span><b class="${r.disponible < 0 ? 'neg' : ''}">${money(r.disponible)}</b></div>` : ''}
       </div></div>`;
   }
   function listaUrgente() {
@@ -95,8 +112,8 @@
     const mesK = hoy().slice(0, 7);
     const h = suma(f => f === hoy()), m = suma(f => f.startsWith(mesK)), g = suma(() => true);
     const sinCosto = prods().filter(p => p.activo !== false && !(p.costo > 0));
-    return `<div class="tarjetas">${tarjeta('Hoy', h)}${tarjeta('Este mes', m)}${tarjeta('Total acumulado', g)}</div>
-      <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes). Invertido = total de las compras de reposición registradas.</p>
+    return `<div class="tarjetas">${tarjeta('Hoy', h)}${tarjeta('Este mes', m)}${tarjeta('Total acumulado', g, true)}</div>
+      <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes). Invertido = total de las compras de reposición registradas. Gasto pastoral = aportes registrados en la pestaña Pastoral. Utilidad disponible = ganancia acumulada − gasto pastoral acumulado.</p>
       ${sinCosto.length ? `<div class="alerta-caja">⚠ ${sinCosto.length} producto${sinCosto.length === 1 ? '' : 's'} sin costo: la ganancia se ve más alta de lo real hasta completarlos.
         <button class="btn btn-sec btn-peq" data-accion="a:tab" data-tab="productos">Completar costos</button></div>` : ''}
       <h3>Urgente reponer</h3>${listaUrgente()}
@@ -108,22 +125,23 @@
   function vCalendario() {
     const { y, m } = cal, mesK = y + '-' + U.pad(m + 1);
     const dias = new Date(y, m + 1, 0).getDate(), off = (new Date(y, m, 1).getDay() + 6) % 7;
-    const tot = suma(f => f.startsWith(mesK));
+    const tot = suma(f => f.startsWith(mesK)), extra = porDia(mesK);
     let nombreMes = new Date(y, m, 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' }).replace(' de ', ' ');
     nombreMes = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
     let celdas = '';
     for (let i = 0; i < off; i++) celdas += '<div class="dia vacio-d"></div>';
     for (let d = 1; d <= dias; d++) {
-      const f = mesK + '-' + U.pad(d), r = S.resumen[f];
+      const f = mesK + '-' + U.pad(d), r = S.resumen[f], x = extra[f] || {};
       celdas += `<button class="dia ${f === hoy() ? 'hoy' : ''} ${f === calDia ? 'sel' : ''}" data-accion="a:dia" data-dia="${f}"><span class="n">${d}</span>
-        ${r ? `<span class="v">${U.corto(r.ventas)}</span><span class="g ${gan(r) < 0 ? 'neg' : ''}">${U.corto(gan(r))}</span>` : ''}</button>`;
+        ${r ? `<span class="v">${U.corto(r.ventas)}</span><span class="g ${gan(r) < 0 ? 'neg' : ''}">${U.corto(gan(r))}</span>` : ''}
+        ${x.compras ? `<span class="c">−${U.corto(x.compras)}</span>` : ''}${x.pastoral ? `<span class="p">♥ ${U.corto(x.pastoral)}</span>` : ''}</button>`;
     }
     return `<div class="cal-enc"><button class="btn btn-sec btn-peq" data-accion="a:calMes" data-d="-1">◀</button><h2>${esc(nombreMes)}</h2>
       <button class="btn btn-sec btn-peq" data-accion="a:calMes" data-d="1">▶</button></div>
-      <p class="nota" style="margin-top:0">Mes: <b>${money(tot.ventas)}</b> en ventas · ganancia <b style="color:var(--ok)">${money(tot.ganancia)}</b> · ${tot.nVentas} compras</p>
+      <p class="nota" style="margin-top:0">Mes: <b>${money(tot.ventas)}</b> en ventas · ganancia <b style="color:var(--ok)">${money(tot.ganancia)}</b> · ${tot.nVentas} venta${tot.nVentas === 1 ? '' : 's'} · compras <b style="color:var(--warn)">${money(tot.invertido)}</b> · pastoral <b style="color:var(--pastoral)">${money(tot.pastoral)}</b></p>
       <div class="cal-sem">${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div>${d}</div>`).join('')}</div>
       <div class="cal">${celdas}</div>
-      <p class="leyenda"><span class="v">$ azul</span> = ventas del día · <span class="g">$ verde</span> = ganancia del día. Toque un día para ver el detalle.</p>
+      <p class="leyenda"><span class="v">$ azul</span> = ventas · <span class="g">$ verde</span> = ganancia · <span class="c">−$ naranja</span> = compras de reposición · <span class="p">♥ $ morado</span> = gasto pastoral. Toque un día para ver el detalle.</p>
       <div id="dia-detalle" class="panel"></div>`;
   }
   async function cargarDia() {
@@ -150,8 +168,18 @@
           <td class="num">${money(v.total)}</td><td class="num">${money(v.ganancia)}</td>
           <td class="acc">${an ? `<span class="etq mal">Anulada</span>` : `<button class="btn btn-sec btn-peq" data-accion="a:anular" data-id="${v.id}">Anular</button>`}</td></tr>`;
       }).join('')}</tbody></table></div>`;
+    const compD = Object.values(repos).filter(c => c && c.fecha === calDia).sort((a, b) => a.ts - b.ts);
+    const pastD = pastoralesActivos().filter(g => g.fecha === calDia).sort((a, b) => a.ts - b.ts);
+    const tC = compD.reduce((a, c) => a + (c.total || 0), 0), tP = pastD.reduce((a, g) => a + (g.monto || 0), 0);
+    const extraHtml = (compD.length ? `<h4 class="sub-h">Compras de reposición · <span style="color:var(--warn)">${money(tC)}</span></h4>
+      <div style="overflow:auto"><table class="tabla"><tbody>${compD.map(c => `<tr><td>${U.horaStr(c.ts)}</td><td>${U.arr(c.items).map(i => i.cantidad + '× ' + esc(i.nombre)).join(', ')}${c.nota ? ` <small class="gris">· ${esc(c.nota)}</small>` : ''}</td>
+        <td>${c.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(c.total)}</td></tr>`).join('')}</tbody></table></div>` : '')
+      + (pastD.length ? `<h4 class="sub-h">Gastos pastorales · <span style="color:var(--pastoral)">${money(tP)}</span></h4>
+      <div style="overflow:auto"><table class="tabla"><tbody>${pastD.map(g => `<tr><td>${esc(g.concepto)}${g.nota ? ` <small class="gris">· ${esc(g.nota)}</small>` : ''}</td>
+        <td>${g.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(g.monto)}</td></tr>`).join('')}</tbody></table></div>` : '');
     d.innerHTML = `<h3 style="margin-top:0">${U.fechaLarga(calDia)}</h3>
-      <p class="nota" style="margin-top:0">Ventas <b>${money(r.ventas)}</b> · Costo ${money(r.costo)} · Mermas ${money(r.mermas)} · Ganancia <b style="color:var(--ok)">${money(gan(r))}</b> · ${r.nVentas || 0} compras</p>${cuerpo}`;
+      <p class="nota" style="margin-top:0">Ventas <b>${money(r.ventas)}</b> · Costo ${money(r.costo)} · Mermas ${money(r.mermas)} · Ganancia <b style="color:var(--ok)">${money(gan(r))}</b> · ${r.nVentas || 0} venta${r.nVentas === 1 ? '' : 's'}
+        · Compras <b style="color:var(--warn)">${money(tC)}</b> · Pastoral <b style="color:var(--pastoral)">${money(tP)}</b></p>${cuerpo}${extraHtml}`;
   }
   function modalAnular(id) {
     const v = (diaVentas || []).find(x => x.id === id); if (!v) return;
@@ -439,6 +467,58 @@
     U.descargar('consumo-' + repDatos.mes + '.csv', csv(filas), 'text/csv;charset=utf-8');
   }
 
+  /* ---------- GASTOS PASTORALES ---------- */
+  const mesPast = () => past.y + '-' + U.pad(past.m + 1);
+  function vPastoral() {
+    const mesK = hoy().slice(0, 7), h = suma(f => f === hoy()), m = suma(f => f.startsWith(mesK)), g = suma(() => true);
+    const mk = mesPast(), lista = Object.entries(pastoral).map(([id, x]) => Object.assign({ id }, x)).filter(x => x && String(x.fecha).startsWith(mk))
+      .sort((a, b) => (b.fecha.localeCompare(a.fecha)) || (b.ts - a.ts));
+    const totMes = lista.filter(x => x.estado !== 'anulado').reduce((a, x) => a + (x.monto || 0), 0);
+    let nombre = new Date(past.y, past.m, 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' }).replace(' de ', ' ');
+    nombre = nombre.charAt(0).toUpperCase() + nombre.slice(1);
+    const t = (titulo, r) => `<div class="tarjeta"><h4>${titulo}</h4><div class="t-venta t-past">${money(r.pastoral)}</div>
+      <div class="det">${r.nPastoral} gasto${r.nPastoral === 1 ? '' : 's'} pastoral${r.nPastoral === 1 ? '' : 'es'}</div></div>`;
+    return `<div class="tarjetas">${t('Hoy', h)}${t('Este mes', m)}${t('Total acumulado', g)}
+        <div class="tarjeta"><h4>Utilidad disponible</h4><div class="t-venta ${g.disponible < 0 ? 'neg' : ''}">${money(g.disponible)}</div>
+        <div class="det">Ganancia ${money(g.ganancia)} − pastoral ${money(g.pastoral)}</div></div></div>
+      <h3>Registrar gasto pastoral</h3>
+      <div class="panel"><div class="form" style="margin-top:0">
+        <div class="fila2"><label>Fecha<input id="gp-fecha" type="date" value="${hoy()}" max="${hoy()}"></label>
+        <label>Valor<input id="gp-monto" inputmode="numeric" placeholder="$ 0"></label></div>
+        <label>Concepto<input id="gp-concepto" placeholder="Ej: Refrigerio convivencia, ayuda a familia, material catequesis"></label>
+        <label>Nota (opcional)<input id="gp-nota" placeholder="Quién lo recibió, detalle, etc."></label>
+        <label class="chk"><input type="checkbox" id="gp-caja" checked> Pagado con dinero de la caja</label></div>
+        <div id="gp-err" class="error-msg"></div>
+        <div class="barra" style="margin:4px 0 0"><button class="btn btn-prim" data-accion="a:guardarPastoral">Registrar gasto</button></div>
+        <p class="nota" style="margin-bottom:0">Si se pagó con dinero de la caja, el cierre semanal lo descuenta del efectivo esperado.</p></div>
+      <div class="cal-enc" style="margin-top:26px"><button class="btn btn-sec btn-peq" data-accion="a:pastMes" data-d="-1" aria-label="Mes anterior">◀</button><h2>${esc(nombre)}</h2>
+        <button class="btn btn-sec btn-peq" data-accion="a:pastMes" data-d="1" aria-label="Mes siguiente">▶</button></div>
+      ${lista.length ? `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th>Concepto</th><th></th><th class="num">Valor</th><th></th></tr></thead><tbody>
+        ${lista.map(x => { const an = x.estado === 'anulado'; return `<tr class="${an ? 'anulada' : ''}"><td>${esc(x.fecha)}</td><td>${esc(x.concepto)}${x.nota ? `<br><small class="gris">${esc(x.nota)}</small>` : ''}</td>
+          <td>${x.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(x.monto)}</td>
+          <td class="acc">${an ? '<span class="etq mal">Anulado</span>' : `<button class="btn btn-sec btn-peq" data-accion="a:anularPastoral" data-id="${x.id}">Anular</button>`}</td></tr>`; }).join('')}
+        <tr class="cat-fila"><td colspan="3">Total del mes</td><td class="num">${money(totMes)}</td><td></td></tr></tbody></table></div>`
+        : '<div class="panel"><p class="nota" style="margin:0">No hay gastos pastorales en este mes.</p></div>'}`;
+  }
+  async function guardarPastoral() {
+    const err = $('#gp-err'), fecha = $('#gp-fecha').value, monto = P($('#gp-monto').value), concepto = $('#gp-concepto').value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoy()) { err.textContent = 'Elija una fecha válida (hoy o anterior).'; return; }
+    if (!(monto > 0)) { err.textContent = 'Escriba el valor del gasto.'; return; }
+    if (!concepto) { err.textContent = 'Escriba el concepto del gasto.'; return; }
+    const key = DB.newKey('pastoral');
+    try {
+      await DB.update({ ['pastoral/' + key]: { ts: Date.now(), fecha, monto, concepto, nota: $('#gp-nota').value.trim(), deCaja: $('#gp-caja').checked, estado: 'activo' } });
+      toast('Gasto pastoral registrado: ' + money(monto), 'ok');
+      past = { y: Number(fecha.slice(0, 4)), m: Number(fecha.slice(5, 7)) - 1 }; render();
+    } catch (e) { errMsg(e); }
+  }
+  function modalAnularPastoral(id) {
+    const g = pastoral[id]; if (!g) return; editId = id;
+    Modal.abrir(`<h2>Anular gasto pastoral</h2><p class="sub">${esc(g.fecha)} · ${esc(g.concepto)} · <b>${money(g.monto)}</b></p>
+      <p class="nota">El gasto queda marcado como anulado y deja de contar en el resumen, el calendario y el cierre.</p>
+      <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">No anular</button><button class="btn btn-mal" data-accion="a:anularPastoralOk">Sí, anular</button></div>`, { ancho: 460 });
+  }
+
   /* ---------- CIERRE SEMANAL ---------- */
   function vCierre() {
     return `<h2>Cierre de caja semanal</h2>
@@ -460,8 +540,8 @@
   }
   function pintarHistorial() {
     const h = $('#c-hist'); if (!h) return;
-    h.innerHTML = cierres.length ? `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th class="num">Ventas</th><th class="num">Compras caja</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead><tbody>
-      ${cierres.slice(0, 12).map(c => `<tr><td>${U.fechaHoraStr(c.hastaTs)}</td><td class="num">${money(c.ventas)}</td><td class="num">${money(c.compras)}</td><td class="num">${money(c.esperado)}</td><td class="num">${money(c.contado)}</td>
+    h.innerHTML = cierres.length ? `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th class="num">Ventas</th><th class="num">Compras caja</th><th class="num">Pastoral</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead><tbody>
+      ${cierres.slice(0, 12).map(c => `<tr><td>${U.fechaHoraStr(c.hastaTs)}</td><td class="num">${money(c.ventas)}</td><td class="num">${money(c.compras)}</td><td class="num">${money(c.pastoral || 0)}</td><td class="num">${money(c.esperado)}</td><td class="num">${money(c.contado)}</td>
         <td class="num"><span class="etq ${c.diferencia === 0 ? 'ok' : 'warn'}">${c.diferencia > 0 ? '+' : ''}${money(c.diferencia)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="nota">Aún no hay cierres.</p>';
   }
   async function calcularCierre() {
@@ -472,12 +552,15 @@
       const [v, c] = await Promise.all([DB.query('ventas', { orderBy: 'ts', startAt: desdeTs }), DB.query('reposiciones', { orderBy: 'ts', startAt: desdeTs })]);
       const ventas = Object.values(v || {}).filter(x => x.estado === 'activa' && x.ts <= hasta);
       const compras = Object.values(c || {}).filter(x => x.deCaja !== false && x.ts <= hasta);
-      cierreCalc = { desde: desdeTs, hasta, ventas: ventas.reduce((a, x) => a + x.total, 0), nVentas: ventas.length, compras: compras.reduce((a, x) => a + x.total, 0), nCompras: compras.length };
+      const pasts = pastoralesActivos().filter(g => g.deCaja !== false && g.ts >= desdeTs && g.ts <= hasta);
+      cierreCalc = { desde: desdeTs, hasta, ventas: ventas.reduce((a, x) => a + x.total, 0), nVentas: ventas.length, compras: compras.reduce((a, x) => a + x.total, 0), nCompras: compras.length,
+        pastoral: pasts.reduce((a, g) => a + (g.monto || 0), 0), nPastoral: pasts.length };
       res.innerHTML = `<table class="tabla"><tbody>
         <tr><td>Ventas del periodo (${cierreCalc.nVentas} compras)</td><td class="num"><b>${money(cierreCalc.ventas)}</b></td></tr>
         <tr><td>− Compras de reposición pagadas de la caja (${cierreCalc.nCompras})</td><td class="num">${money(cierreCalc.compras)}</td></tr>
-        <tr><td>− Retiros u otros movimientos de la caja<br><small class="gris">Dinero sacado que no sea reposición (ej. entrega de ganancias)</small></td><td class="num"><input id="c-retiros" class="mini-in" style="width:130px" inputmode="numeric" value="0"></td></tr>
-        <tr class="cat-fila"><td>Efectivo esperado (sin la base)</td><td class="num" id="c-esp">${money(cierreCalc.ventas - cierreCalc.compras)}</td></tr>
+        <tr><td>− Gastos pastorales pagados de la caja (${cierreCalc.nPastoral})</td><td class="num">${money(cierreCalc.pastoral)}</td></tr>
+        <tr><td>− Retiros u otros movimientos de la caja<br><small class="gris">Dinero sacado que no sea reposición ni gasto pastoral registrado</small></td><td class="num"><input id="c-retiros" class="mini-in" style="width:130px" inputmode="numeric" value="0"></td></tr>
+        <tr class="cat-fila"><td>Efectivo esperado (sin la base)</td><td class="num" id="c-esp">${money(cierreCalc.ventas - cierreCalc.compras - cierreCalc.pastoral)}</td></tr>
         <tr><td>Efectivo contado (sin la base)</td><td class="num"><input id="c-contado" class="mini-in" style="width:130px" inputmode="numeric" placeholder="$"></td></tr>
         <tr><td><b>Diferencia</b></td><td class="num" id="c-dif">—</td></tr></tbody></table>
         <div class="form" style="margin-top:12px"><label>Nota (opcional)<input id="c-nota2" placeholder="Observaciones del cierre"></label></div>
@@ -486,7 +569,7 @@
   }
   function actualizarDif() {
     if (!cierreCalc || !$('#c-dif')) return;
-    const ret = P($('#c-retiros').value), esp = cierreCalc.ventas - cierreCalc.compras - ret;
+    const ret = P($('#c-retiros').value), esp = cierreCalc.ventas - cierreCalc.compras - cierreCalc.pastoral - ret;
     $('#c-esp').textContent = money(esp);
     const v = $('#c-contado').value;
     if (v === '') { $('#c-dif').innerHTML = '—'; return; }
@@ -496,11 +579,11 @@
   async function guardarCierre() {
     if (!cierreCalc) return;
     if ($('#c-contado').value === '') { toast('Escriba el efectivo contado.', 'warn'); return; }
-    const retiros = P($('#c-retiros').value), esperado = cierreCalc.ventas - cierreCalc.compras - retiros, contado = P($('#c-contado').value);
+    const retiros = P($('#c-retiros').value), esperado = cierreCalc.ventas - cierreCalc.compras - cierreCalc.pastoral - retiros, contado = P($('#c-contado').value);
     const key = DB.newKey('cierres');
     try {
       await DB.update({ ['cierres/' + key]: { ts: Date.now(), fecha: hoy(), desdeTs: cierreCalc.desde, hastaTs: cierreCalc.hasta, ventas: cierreCalc.ventas, nVentas: cierreCalc.nVentas,
-        compras: cierreCalc.compras, retiros, esperado, contado, diferencia: contado - esperado, nota: $('#c-nota2').value.trim() } });
+        compras: cierreCalc.compras, pastoral: cierreCalc.pastoral, retiros, esperado, contado, diferencia: contado - esperado, nota: $('#c-nota2').value.trim() } });
       toast('Cierre guardado.', 'ok'); iniciarCierre();
     } catch (e) { errMsg(e); }
   }
@@ -535,8 +618,8 @@
     U.descargar('inventario-' + hoy() + '.csv', csv(filas), 'text/csv;charset=utf-8');
   }
   async function json() {
-    const [pr, tr, ve, re, me, ci] = await Promise.all(['productos', 'trabajadores', 'ventas', 'reposiciones', 'mermas', 'cierres'].map(p => DB.get(p)));
-    const todo = { productos: pr, trabajadores: tr, ventas: ve, reposiciones: re, mermas: me, cierres: ci };
+    const [pr, tr, ve, re, me, ci, pa] = await Promise.all(['productos', 'trabajadores', 'ventas', 'reposiciones', 'mermas', 'cierres', 'pastoral'].map(p => DB.get(p)));
+    const todo = { productos: pr, trabajadores: tr, ventas: ve, reposiciones: re, mermas: me, cierres: ci, pastoral: pa };
     U.descargar('copia-tienda-san-jose-' + hoy() + '.json', JSON.stringify(todo, null, 1), 'application/json');
   }
   async function recalcular() {
@@ -587,6 +670,11 @@
       case 'repCsv': csvConsumo(); break;
       case 'repCsvPersona': csvConsumo(repCodigo); break;
       case 'repImprimir': window.print(); break;
+      case 'guardarPastoral': guardarPastoral(); break;
+      case 'anularPastoral': modalAnularPastoral(el.dataset.id); break;
+      case 'anularPastoralOk': DB.update({ ['pastoral/' + editId + '/estado']: 'anulado', ['pastoral/' + editId + '/anuladoTs']: Date.now() })
+        .then(() => { Modal.cerrar(); toast('Gasto pastoral anulado.', 'ok'); render(); }).catch(errMsg); break;
+      case 'pastMes': { past.m += Number(el.dataset.d); if (past.m < 0) { past.m = 11; past.y--; } if (past.m > 11) { past.m = 0; past.y++; } render(); break; }
       case 'calcCierre': calcularCierre(); break;
       case 'guardarCierre': guardarCierre(); break;
       case 'json': json().catch(errMsg); break;

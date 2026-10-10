@@ -46,7 +46,7 @@ Abra `generar-clave.html` (desde la dirección publicada o `localhost`), escriba
 
 ## 7. Rutina semanal (viernes, al cerrar)
 
-1. Administrador → **Cierre semanal**: la app calcula lo que debería haber en efectivo (ventas − compras de reposición pagadas de la caja − retiros). Cuente el dinero **sin la base** y escríbalo; la app muestra la diferencia. Guarde el cierre.
+1. Administrador → **Cierre semanal**: la app calcula lo que debería haber en efectivo (ventas − compras de reposición pagadas de la caja − gastos pastorales pagados de la caja − retiros). Cuente el dinero **sin la base** y escríbalo; la app muestra la diferencia. Guarde el cierre.
 2. Administrador → **Respaldo → Copia completa (JSON)** y guárdela en un lugar seguro.
 
 ## Cómo funciona (resumen)
@@ -54,6 +54,7 @@ Abra `generar-clave.html` (desde la dirección publicada o `localhost`), escriba
 - **Venta:** el trabajador elige productos → Pagar → digita su código de 3 dígitos → confirma su nombre → indica con qué billete paga (se muestra el cambio) → Confirmar. Se descuenta el stock y se registra costo, precio y ganancia **vigentes en ese momento** (si el precio cambia mañana, el historial no cambia).
 - **Errores:** antes de confirmar, el trabajador quita productos del carrito. Después de confirmar, solo el administrador puede **anular** la venta (Calendario → día → Anular); el stock se devuelve y queda registrada como anulada.
 - **Ganancia** = ventas − costo de lo vendido − mermas.
+- **Gastos pastorales:** las utilidades de la tienda se destinan a la pastoral. Cada aporte se registra en Administración → **Pastoral** (fecha, valor, concepto y si salió de la caja). Aparece en el resumen (hoy, mes y acumulado), en el calendario y en el cierre semanal. **Utilidad disponible** = ganancia acumulada − gasto pastoral acumulado. Un gasto registrado por error se anula; no se borra.
 - **Costo:** cada compra de reposición actualiza el costo del producto al último valor pagado.
 - **Sin internet:** la tienda avisa y no deja registrar compras hasta que regrese la conexión (Realtime Database no guarda ventas pendientes de forma duradera en la web).
 - **Inactividad:** a los 60 segundos sin tocar la tablet se limpia la compra; el panel de administrador se cierra a los 5 minutos sin uso. Los tiempos se cambian en `config.js`.
