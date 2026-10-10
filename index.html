@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#0A2540">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Tienda San José</title>
@@ -17,7 +18,7 @@
 <main id="vista-tienda" class="vista">
   <header class="encabezado">
     <div class="marca">
-      <span class="logo">🏪</span>
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 4.6 4h14.8L21 9.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.3V20h14v-7.7"/><path d="M10 20v-5h4v5"/></svg></span>
       <div>
         <h1 id="nombre-tienda">Tienda San José</h1>
         <p>Elige tus productos, deja el dinero en la caja y registra tu compra</p>
@@ -25,7 +26,7 @@
     </div>
     <div class="enc-der">
       <span id="estado-con" class="chip ok">● En línea</span>
-      <button class="btn-ghost" data-accion="s:admin">🔒 Administrador</button>
+      <button class="btn-ghost" data-accion="s:admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span class="txt">Administrador</span></button>
     </div>
   </header>
 
@@ -53,12 +54,12 @@
 <main id="vista-admin" class="vista" hidden>
   <header class="encabezado">
     <div class="marca">
-      <span class="logo">⚙️</span>
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></span>
       <div><h1>Administración</h1><p id="admin-sub">Tienda San José</p></div>
     </div>
     <div class="enc-der">
       <span id="estado-con2" class="chip ok">● En línea</span>
-      <button class="btn-ghost" data-accion="a:salir">← Volver a la tienda</button>
+      <button class="btn-ghost" data-accion="a:salir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span class="txt">Volver a la tienda</span></button>
     </div>
   </header>
   <nav id="admin-tabs" class="admin-tabs"></nav>

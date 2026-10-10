@@ -5,14 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generar clave de administrador</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#F2F7FC;color:#12263F;margin:0;padding:24px}
-  .caja{max-width:640px;margin:0 auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(10,37,64,.12)}
-  h1{color:#0F3A66;font-size:24px;margin-top:0}
-  label{font-weight:700;display:block;margin:14px 0 6px}
-  input{width:100%;box-sizing:border-box;padding:12px;font-size:17px;border:2px solid #C9DAEB;border-radius:10px}
-  button{margin-top:14px;padding:12px 20px;font-size:17px;font-weight:700;border:0;border-radius:10px;background:#1F6FB5;color:#fff;cursor:pointer}
-  code{display:block;word-break:break-all;background:#DDEBF8;padding:12px;border-radius:10px;margin-top:10px;font-size:14px}
-  p{color:#5B6B7F}
+  :root{color-scheme:light dark;--fondo:#F2F2F7;--sup:#FFFFFF;--sup2:#F7F7FA;--sep:#DCDCE1;--tx:#1C1C1E;--gris:#636366;--acento:#0B5CD5;--boton:#0B5CD5;--suave:#E8F0FD}
+  @media (prefers-color-scheme:dark){:root{--fondo:#000;--sup:#1C1C1E;--sup2:#242427;--sep:#38383A;--tx:#F2F2F7;--gris:#A1A1A6;--acento:#5AA2FF;--boton:#1A66D6;--suave:#16294A}}
+  body{font-family:-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--tx);margin:0;padding:24px 16px;font-size:17px;line-height:1.4;-webkit-font-smoothing:antialiased}
+  .caja{max-width:640px;margin:0 auto;background:var(--sup);border-radius:26px;padding:28px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 4px 14px rgba(0,0,0,.05)}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:0}
+  label{font-weight:600;font-size:14px;color:var(--gris);display:block;margin:16px 0 6px}
+  input{width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;font-size:17px;border:1px solid var(--sep);border-radius:12px;background:var(--sup2);color:var(--tx)}
+  input:focus{outline:none;border-color:var(--acento);box-shadow:0 0 0 3px color-mix(in srgb,var(--acento) 45%,transparent)}
+  button{margin-top:14px;min-height:50px;padding:12px 22px;font-size:17px;font-weight:600;border:0;border-radius:14px;background:var(--boton);color:#fff;cursor:pointer}
+  code{display:block;word-break:break-all;background:var(--suave);padding:14px;border-radius:12px;margin-top:14px;font-size:14px}
+  p{color:var(--gris)}
 </style>
 </head>
 <body>

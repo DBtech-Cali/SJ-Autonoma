@@ -70,7 +70,7 @@ Abra `generar-clave.html` (desde la dirección publicada o `localhost`), escriba
 | Archivo | Para qué sirve |
 |---|---|
 | `index.html` | La aplicación |
-| `css/styles.css` | Colores y diseño (variables azules al inicio) |
+| `css/styles.css` | Colores y diseño (variables de color al inicio, con modo claro y oscuro) |
 | `js/config.js` | **Único archivo que debe editar**: Firebase, clave, billetes, tiempos |
 | `js/db.js` | Conexión a Firebase (y modo demostración) |
 | `js/store.js` | Pantalla de la tienda |
