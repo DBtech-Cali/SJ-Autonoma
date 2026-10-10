@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generar clave de administrador</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#F2F7FC;color:#12263F;margin:0;padding:24px}
+  .caja{max-width:640px;margin:0 auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(10,37,64,.12)}
+  h1{color:#0F3A66;font-size:24px;margin-top:0}
+  label{font-weight:700;display:block;margin:14px 0 6px}
+  input{width:100%;box-sizing:border-box;padding:12px;font-size:17px;border:2px solid #C9DAEB;border-radius:10px}
+  button{margin-top:14px;padding:12px 20px;font-size:17px;font-weight:700;border:0;border-radius:10px;background:#1F6FB5;color:#fff;cursor:pointer}
+  code{display:block;word-break:break-all;background:#DDEBF8;padding:12px;border-radius:10px;margin-top:10px;font-size:14px}
+  p{color:#5B6B7F}
+</style>
+</head>
+<body>
+<div class="caja">
+  <h1>Generar clave de administrador</h1>
+  <p>Escriba la clave nueva. Se convierte en un código (SHA-256) que usted pega en <b>js/config.js</b>, en la línea <b>claveAdminHash</b>. Esta página no guarda ni envía nada.</p>
+  <label for="c">Clave nueva</label>
+  <input id="c" type="text" autocomplete="off">
+  <button id="b">Generar código</button>
+  <code id="r">El código aparecerá aquí</code>
+  <button id="copiar" hidden>Copiar código</button>
+</div>
+<script>
+document.getElementById('b').onclick = async function () {
+  var t = document.getElementById('c').value;
+  if (!t) return;
+  if (!(window.crypto && crypto.subtle)) { document.getElementById('r').textContent = 'Abra esta página desde https:// o localhost.'; return; }
+  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
+  var hex = Array.from(new Uint8Array(buf)).map(function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+  document.getElementById('r').textContent = hex;
+  document.getElementById('copiar').hidden = false;
+};
+document.getElementById('copiar').onclick = function () {
+  navigator.clipboard.writeText(document.getElementById('r').textContent);
+  this.textContent = 'Copiado ✓';
+};
+</script>
+</body>
+</html>

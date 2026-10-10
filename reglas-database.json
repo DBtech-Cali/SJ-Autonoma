@@ -1,0 +1,8 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    "ventas": { ".indexOn": ["fecha", "ts"] },
+    "reposiciones": { ".indexOn": ["ts"] }
+  }
+}
