@@ -51,7 +51,7 @@ Abra `generar-clave.html` (desde la dirección publicada o `localhost`), escriba
 
 ## Cómo funciona (resumen)
 
-- **Venta:** el trabajador elige productos → Pagar → digita su código de 3 dígitos → confirma su nombre → indica con qué billete paga (se muestra el cambio) → Confirmar. Se descuenta el stock y se registra costo, precio y ganancia **vigentes en ese momento** (si el precio cambia mañana, el historial no cambia).
+- **Venta:** el trabajador elige productos → Pagar → digita su código de 3 dígitos → confirma su nombre → toca los billetes con los que paga, uno por cada billete (ej. 3 toques en $5.000 = $15.000; se muestra lo que falta o el cambio) → Confirmar. Se descuenta el stock y se registra costo, precio y ganancia **vigentes en ese momento** (si el precio cambia mañana, el historial no cambia).
 - **Errores:** antes de confirmar, el trabajador quita productos del carrito. Después de confirmar, solo el administrador puede **anular** la venta (Calendario → día → Anular); el stock se devuelve y queda registrada como anulada.
 - **Ganancia** = ventas − costo de lo vendido − mermas.
 - **Gastos pastorales:** las utilidades de la tienda se destinan a la pastoral. Cada aporte se registra en Administración → **Pastoral** (fecha, valor, concepto y si salió de la caja). Aparece en el resumen (hoy, mes y acumulado), en el calendario y en el cierre semanal. **Utilidad disponible** = ganancia acumulada − gasto pastoral acumulado. Un gasto registrado por error se anula; no se borra.

@@ -34,7 +34,7 @@
   function card(p) {
     const q = cart[p.id] || 0, stock = p.stock || 0;
     const ago = stock <= 0, sin = !(p.precio > 0), bajo = !ago && stock <= (p.minimo || 0);
-    const estado = ago ? 'Agotado' : sin ? 'Sin precio' : bajo ? 'Quedan ' + stock : '';
+    const estado = ago ? 'Agotado' : sin ? 'Sin precio' : (bajo ? 'Quedan ' : 'Disponibles: ') + stock;
     const img = U.img(p.imagen) ? `<span class="prod-img"><img src="${esc(p.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer"></span>` : '';
     return `<button class="prod ${ago || sin ? 'agotado' : ''} ${q ? 'enCarro' : ''} ${img ? 'conImg' : ''}" data-accion="s:add" data-id="${p.id}" ${ago || sin ? 'disabled' : ''}>
       ${img}<span class="prod-nombre">${esc(p.nombre)}</span>
@@ -91,7 +91,7 @@
   function abrirPago() {
     if (!lineas().length) return;
     if (!S.conectado) { toast('Sin conexión a internet. Espere a que regrese para registrar su compra.', 'error'); return; }
-    flujo = { paso: 'codigo', codigo: '', error: '', trab: null, pago: null, otro: '', esOtro: false, resumen: null };
+    flujo = { paso: 'codigo', codigo: '', error: '', trab: null, pago: null, billetes: {}, otro: '', esOtro: false, resumen: null };
     pintarFlujo(true);
   }
   function pintarFlujo(abrir) {
@@ -110,20 +110,23 @@
         <p class="sub">${visita ? '¿Es correcto?' : '¿Eres tú?'}</p>
         <div class="acciones"><button class="btn btn-sec" data-accion="s:no">No, volver</button><button class="btn btn-prim" data-accion="s:si">Sí, continuar</button></div></div>`;
     } else if (flujo.paso === 'pago') {
-      const pago = flujo.pago == null ? t : flujo.pago, cambio = Math.max(0, pago - t);
+      const pago = flujo.pago == null ? t : flujo.pago, cambio = Math.max(0, pago - t), falta = Math.max(0, t - pago);
+      const hayBilletes = Object.keys(flujo.billetes).length > 0;
       html = `<div class="paso"><h2>${esc(flujo.trab.nombre)}</h2>
         <div class="lista-resumen">${lineas().map(l => `<div><span>${l.cantidad} × ${esc(l.nombre)}</span><b>${money(l.precio * l.cantidad)}</b></div>`).join('')}</div>
         <div class="gran-total"><span>Debes dejar en la caja</span><strong>${money(t)}</strong></div>
-        <p class="sub" style="margin-bottom:4px">¿Con cuánto pagas? (para calcular tu cambio)</p>
+        <p class="sub" style="margin-bottom:4px">¿Con qué billetes pagas? Toca un billete una vez por cada uno que dejes.</p>
         <div class="billetes">
-          <button class="bill ${flujo.pago == null && !flujo.esOtro ? 'sel' : ''}" data-accion="s:pago" data-v="exacto">Pago exacto</button>
-          ${CFG.billetes.map(b => `<button class="bill ${flujo.pago === b && !flujo.esOtro ? 'sel' : ''}" data-accion="s:pago" data-v="${b}" ${b < t ? 'disabled' : ''}>${money(b)}</button>`).join('')}
+          <button class="bill ${flujo.pago == null ? 'sel' : ''}" data-accion="s:pago" data-v="exacto">Pago exacto</button>
+          ${CFG.billetes.map(b => { const n = flujo.billetes[b] || 0;
+            return `<button class="bill ${n ? 'sel' : ''}" data-accion="s:pago" data-v="${b}" aria-label="${money(b)}${n ? ', ' + n + ' seleccionado' + (n === 1 ? '' : 's') : ''}">${money(b)}${n ? `<span class="bill-n">×${n}</span>` : ''}</button>`; }).join('')}
           <button class="bill ${flujo.esOtro ? 'sel' : ''}" data-accion="s:pago" data-v="otro">${flujo.esOtro ? money(flujo.pago) : 'Otro valor'}</button>
         </div>
-        <div class="cambio ${cambio > 0 ? 'conCambio' : ''}">${cambio > 0 ? `Tu cambio: <b>${money(cambio)}</b>` : 'Sin cambio'}</div>
+        ${hayBilletes ? `<div class="entregas"><span>Entregas <b>${money(pago)}</b></span><button class="link" data-accion="s:pagoBorrar">Borrar billetes</button></div>` : ''}
+        <div class="cambio ${falta > 0 ? 'falta' : cambio > 0 ? 'conCambio' : ''}">${falta > 0 ? `Faltan: <b>${money(falta)}</b>` : cambio > 0 ? `Tu cambio: <b>${money(cambio)}</b>` : 'Sin cambio'}</div>
         <div class="error-msg">${esc(flujo.error)}</div>
         <div class="acciones"><button class="btn btn-sec" data-accion="cerrar" ${enviando ? 'disabled' : ''}>Cancelar</button>
-        <button class="btn btn-prim" data-accion="s:confirmar" ${enviando ? 'disabled' : ''}>${enviando ? 'Registrando…' : 'Confirmar compra'}</button></div></div>`;
+        <button class="btn btn-prim" data-accion="s:confirmar" ${enviando || falta > 0 ? 'disabled' : ''}>${enviando ? 'Registrando…' : 'Confirmar compra'}</button></div></div>`;
     } else if (flujo.paso === 'otro') {
       html = `<div class="paso"><h2>¿Con cuánto pagas?</h2>
         <div class="gran-total"><span>Total a pagar ${money(t)}</span><strong>${flujo.otro ? money(flujo.otro) : '$ 0'}</strong></div>
@@ -254,22 +257,29 @@
       case 'vaciar': cart = {}; render(); break;
       case 'pagar': abrirPago(); break;
       case 'tecla': tecla(el.dataset.k); break;
-      case 'si': flujo.paso = 'pago'; flujo.pago = null; flujo.esOtro = false; pintarFlujo(); break;
+      case 'si': flujo.paso = 'pago'; flujo.pago = null; flujo.billetes = {}; flujo.esOtro = false; pintarFlujo(); break;
       case 'no': flujo.paso = 'codigo'; flujo.codigo = ''; flujo.trab = null; pintarFlujo(); break;
       case 'pago': {
         const v = el.dataset.v, t = total();
         flujo.error = '';
-        if (v === 'exacto') { flujo.pago = null; flujo.esOtro = false; pintarFlujo(); }
+        if (v === 'exacto') { flujo.pago = null; flujo.billetes = {}; flujo.esOtro = false; pintarFlujo(); }
         else if (v === 'otro') { flujo.paso = 'otro'; flujo.otro = ''; pintarFlujo(); }
-        else { flujo.pago = Number(v); flujo.esOtro = false; pintarFlujo(); }
+        else {
+          /* Cada toque suma un billete de esa denominación (ej. 3 × $5.000) */
+          const b = Number(v);
+          flujo.billetes[b] = (flujo.billetes[b] || 0) + 1; flujo.esOtro = false;
+          flujo.pago = Object.entries(flujo.billetes).reduce((a, [d, n]) => a + Number(d) * n, 0);
+          pintarFlujo();
+        }
         break;
       }
       case 'otroAtras': flujo.paso = 'pago'; flujo.error = ''; pintarFlujo(); break;
       case 'otroListo': {
         const m = U.parse(flujo.otro), t = total();
         if (m < t) { flujo.error = 'Debe ser igual o mayor a ' + money(t); pintarFlujo(); break; }
-        flujo.pago = m; flujo.esOtro = true; flujo.paso = 'pago'; flujo.error = ''; pintarFlujo(); break;
+        flujo.pago = m; flujo.billetes = {}; flujo.esOtro = true; flujo.paso = 'pago'; flujo.error = ''; pintarFlujo(); break;
       }
+      case 'pagoBorrar': flujo.pago = null; flujo.billetes = {}; flujo.esOtro = false; flujo.error = ''; pintarFlujo(); break;
       case 'confirmar': confirmar(); break;
       case 'terminar': reiniciar(); break;
       case 'admin': pedirClave(); break;
