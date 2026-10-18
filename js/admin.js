@@ -20,8 +20,13 @@
   const prods = () => Object.entries(S.productos).map(([id, p]) => Object.assign({ id }, p))
     .sort((a, b) => (ORDEN.indexOf(a.categoria) - ORDEN.indexOf(b.categoria)) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
   const gan = d => d ? (d.ventas || 0) - (d.costo || 0) - (d.mermas || 0) : 0;
-  const ratio = p => (p.minimo > 0 ? (p.stock || 0) / p.minimo : (p.stock || 0));
-  const urgentes = () => prods().filter(p => p.activo !== false && (p.stock || 0) <= (p.minimo || 0)).sort((a, b) => ratio(a) - ratio(b));
+  /* Dos inventarios: stock = en la tienda (lo que se vende), bodega = guardado. El mínimo se mide sobre el total. */
+  const totalInv = p => (p.stock || 0) + (p.bodega || 0);
+  const ratio = p => (p.minimo > 0 ? totalInv(p) / p.minimo : totalInv(p));
+  const urgentes = () => prods().filter(p => p.activo !== false && totalInv(p) <= (p.minimo || 0)).sort((a, b) => ratio(a) - ratio(b));
+  /* Cuánto conviene pasar de bodega a tienda para volver a la cantidad fija */
+  const sugerido = p => (p.surtido > 0 ? Math.max(0, Math.min(p.surtido - (p.stock || 0), p.bodega || 0)) : 0);
+  const porSurtir = () => prods().filter(p => p.activo !== false && sugerido(p) > 0);
   function suma(filtro) {
     const r = { ventas: 0, costo: 0, mermas: 0, nVentas: 0 };
     Object.entries(S.resumen).forEach(([f, d]) => {
@@ -104,9 +109,14 @@
   }
   function listaUrgente() {
     const u = urgentes();
-    if (!u.length) return '<p class="nota">✅ Nada urgente por reponer.</p>';
-    return `<div class="urgentes">${u.map(p => `<div class="urg ${(p.stock || 0) <= 0 ? 'cero' : ''}"><b>${esc(p.nombre)}</b>
-      <span>${(p.stock || 0) <= 0 ? '<b style="display:inline;color:var(--mal)">AGOTADO</b>' : 'Quedan ' + p.stock} · mínimo ${p.minimo || 0}</span></div>`).join('')}</div>`;
+    if (!u.length) return '<p class="nota">✅ Nada urgente por comprar.</p>';
+    return `<div class="urgentes">${u.map(p => `<div class="urg ${totalInv(p) <= 0 ? 'cero' : ''}"><b>${esc(p.nombre)}</b>
+      <span>${totalInv(p) <= 0 ? '<b style="display:inline;color:var(--mal)">AGOTADO</b> · ' : ''}Tienda ${p.stock || 0} · Bodega ${p.bodega || 0} · mínimo ${p.minimo || 0}</span></div>`).join('')}</div>`;
+  }
+  function avisoSurtir() {
+    const n = porSurtir().length;
+    return n ? `<div class="alerta-caja alerta-info">📦 ${n} producto${n === 1 ? '' : 's'} por surtir en la tienda desde la bodega.
+      <button class="btn btn-prim btn-peq" data-accion="a:surtir">Surtir tienda</button></div>` : '';
   }
   function vResumen() {
     const mesK = hoy().slice(0, 7);
@@ -116,7 +126,8 @@
       <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes). Invertido = total de las compras de reposición registradas. Gasto pastoral = aportes registrados en la pestaña Pastoral. Utilidad disponible = ganancia acumulada − gasto pastoral acumulado.</p>
       ${sinCosto.length ? `<div class="alerta-caja">⚠ ${sinCosto.length} producto${sinCosto.length === 1 ? '' : 's'} sin costo: la ganancia se ve más alta de lo real hasta completarlos.
         <button class="btn btn-sec btn-peq" data-accion="a:tab" data-tab="productos">Completar costos</button></div>` : ''}
-      <h3>Urgente reponer</h3>${listaUrgente()}
+      ${avisoSurtir()}
+      <h3>Urgente comprar</h3>${listaUrgente()}
       <div class="barra" style="margin-top:14px"><button class="btn btn-prim" data-accion="a:compra">Registrar compra</button>
       <button class="btn btn-sec" data-accion="a:tab" data-tab="inventario">Ver inventario</button></div>`;
   }
@@ -213,28 +224,70 @@
   function vInventario() {
     let filas = '', catAct = null;
     prods().forEach(p => {
-      if (p.categoria !== catAct) { catAct = p.categoria; filas += `<tr class="cat-fila"><td colspan="4">${esc(CATN[catAct] || catAct)}</td></tr>`; }
-      const st = p.stock || 0, ago = st <= 0, bajo = st <= (p.minimo || 0);
+      if (p.categoria !== catAct) { catAct = p.categoria; filas += `<tr class="cat-fila"><td colspan="7">${esc(CATN[catAct] || catAct)}</td></tr>`; }
+      const st = p.stock || 0, tot = totalInv(p), sug = sugerido(p);
+      const estado = p.activo === false ? '<span class="etq gris">No visible</span>' : tot <= 0 ? '<span class="etq mal">Agotado</span>'
+        : tot <= (p.minimo || 0) ? '<span class="etq warn">Comprar</span>' : sug > 0 ? `<span class="etq info">Surtir ${sug}</span>` : st <= 0 ? '<span class="etq warn">Tienda vacía</span>' : '<span class="etq ok">OK</span>';
       filas += `<tr class="${p.activo === false ? 'inactivo' : ''}"><td>${esc(p.nombre)}</td>
-        <td class="num"><b>${st}</b></td><td class="num"><input class="mini-in inp-min" inputmode="numeric" data-id="${p.id}" value="${p.minimo || 0}"></td>
-        <td>${p.activo === false ? '<span class="etq gris">No visible</span>' : ago ? '<span class="etq mal">Agotado</span>' : bajo ? '<span class="etq warn">Reponer</span>' : '<span class="etq ok">OK</span>'}</td></tr>`;
+        <td class="num"><b>${st}</b></td>
+        <td class="num"><input class="mini-in inp-surt" inputmode="numeric" data-id="${p.id}" value="${p.surtido || ''}" placeholder="—" aria-label="Cantidad fija en tienda de ${esc(p.nombre)}"></td>
+        <td class="num"><b>${p.bodega || 0}</b></td><td class="num">${tot}</td>
+        <td class="num"><input class="mini-in inp-min" inputmode="numeric" data-id="${p.id}" value="${p.minimo || 0}" aria-label="Mínimo de ${esc(p.nombre)}"></td>
+        <td>${estado}</td></tr>`;
     });
-    return `<div class="barra"><button class="btn btn-prim" data-accion="a:compra">➕ Registrar compra (reposición)</button>
+    return `<div class="barra"><button class="btn btn-prim" data-accion="a:surtir">📦 Surtir tienda desde bodega</button>
+      <button class="btn btn-sec" data-accion="a:compra">➕ Registrar compra</button>
       <button class="btn btn-sec" data-accion="a:merma">Registrar merma / ajuste</button></div>
-      <h3 style="margin-top:6px">🚨 Urgente reponer</h3>${listaUrgente()}
+      ${avisoSurtir()}
+      <h3 style="margin-top:6px">🚨 Urgente comprar</h3>${listaUrgente()}
       <h3>Todo el inventario</h3>
-      <p class="nota" style="margin-top:0">Cambie el <b>mínimo</b> de cada producto: cuando el stock llegue a ese número aparece en “Urgente reponer”.</p>
-      <div style="overflow:auto"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Stock</th><th class="num">Mínimo</th><th>Estado</th></tr></thead><tbody>${filas || '<tr><td colspan="4">Sin productos.</td></tr>'}</tbody></table></div>`;
+      <p class="nota" style="margin-top:0"><b>En tienda</b>: lo que está a la vista y se vende. <b>Bodega</b>: lo guardado. <b>Fija en tienda</b>: cuántas unidades quiere tener siempre en la tienda; “Surtir tienda” completa esa cantidad desde la bodega. <b>Mínimo</b>: cuando el total (tienda + bodega) llegue a ese número, aparece en “Urgente comprar”.</p>
+      <div style="overflow:auto"><table class="tabla"><thead><tr><th>Producto</th><th class="num">En tienda</th><th class="num">Fija en tienda</th><th class="num">Bodega</th><th class="num">Total</th><th class="num">Mínimo</th><th>Estado</th></tr></thead><tbody>${filas || '<tr><td colspan="7">Sin productos.</td></tr>'}</tbody></table></div>`;
+  }
+  /* ---------- SURTIR TIENDA (bodega → tienda) ---------- */
+  function modalSurtir() {
+    const lista = prods().filter(p => p.activo !== false);
+    const filas = lista.map(p => { const sug = sugerido(p);
+      return `<tr class="fila-surtir ${sug ? 'con-sug' : ''}" data-pid="${p.id}" data-n="${esc(String(p.nombre).toLowerCase())}">
+      <td>${esc(p.nombre)}<br><small class="gris">${esc(CATN[p.categoria] || '')}</small></td>
+      <td class="num">${p.stock || 0}${p.surtido > 0 ? `<small class="gris"> / ${p.surtido}</small>` : ''}</td><td class="num">${p.bodega || 0}</td>
+      <td><input class="mini-in q" inputmode="numeric" value="${sug || ''}" placeholder="0"></td></tr>`; }).join('');
+    const n = porSurtir().length;
+    Modal.abrir(`<h2>Surtir tienda desde la bodega</h2>
+      <p class="nota" style="margin-top:0">${n ? `Se sugieren las unidades que faltan para volver a la <b>cantidad fija en tienda</b> (${n} producto${n === 1 ? '' : 's'}). Puede cambiarlas.` : 'Ningún producto necesita surtido según su cantidad fija en tienda. Puede escribir cantidades a mano.'}
+      Las unidades salen de la bodega y quedan disponibles para la venta.</p>
+      <input id="buscar-surtir" class="buscar" placeholder="Buscar producto…">
+      <div class="scroll-modal"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Tienda / fija</th><th class="num">Bodega</th><th>Pasar a tienda</th></tr></thead><tbody>${filas || '<tr><td colspan="4">Sin productos.</td></tr>'}</tbody></table></div>
+      <div id="m-err" class="error-msg"></div>
+      <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-prim" data-accion="a:surtirOk">Surtir tienda</button></div>`, { ancho: 680 });
+  }
+  async function surtirOk() {
+    const items = [], err = $('#m-err');
+    for (const tr of $$('.fila-surtir')) {
+      const q = P($('.q', tr).value), p = S.productos[tr.dataset.pid];
+      if (!p || !(q > 0)) continue;
+      if (q > (p.bodega || 0)) { err.textContent = 'En la bodega solo hay ' + (p.bodega || 0) + ' de "' + p.nombre + '".'; return; }
+      items.push({ id: tr.dataset.pid, nombre: p.nombre, cantidad: q });
+    }
+    if (!items.length) { err.textContent = 'Escriba la cantidad de al menos un producto.'; return; }
+    const upd = {}, key = DB.newKey('traslados');
+    upd['traslados/' + key] = { ts: Date.now(), fecha: hoy(), items };
+    items.forEach(i => { upd['productos/' + i.id + '/stock'] = DB.inc(i.cantidad); upd['productos/' + i.id + '/bodega'] = DB.inc(-i.cantidad); });
+    const n = items.reduce((a, i) => a + i.cantidad, 0);
+    try { await DB.update(upd); Modal.cerrar(); toast('Tienda surtida: ' + n + ' unidad' + (n === 1 ? '' : 'es') + ' de ' + items.length + ' producto' + (items.length === 1 ? '' : 's') + '.', 'ok'); } catch (e) { errMsg(e); }
   }
   function modalCompra() {
     const filas = prods().map(p => `<tr class="fila-compra" data-pid="${p.id}" data-n="${esc(String(p.nombre).toLowerCase())}">
-      <td>${esc(p.nombre)}<br><small class="gris">${esc(CATN[p.categoria] || '')}</small></td><td class="num">${p.stock || 0}</td>
+      <td>${esc(p.nombre)}<br><small class="gris">${esc(CATN[p.categoria] || '')}</small></td><td class="num">${p.stock || 0}</td><td class="num">${p.bodega || 0}</td>
       <td><input class="mini-in q" inputmode="numeric" placeholder="0"></td>
       <td><input class="mini-in cu" style="width:96px" inputmode="numeric" value="${p.costo > 0 ? p.costo : ''}" placeholder="costo"></td></tr>`).join('');
     Modal.abrir(`<h2>Registrar compra (reposición)</h2>
-      <p class="nota" style="margin-top:0">Escriba la cantidad comprada y lo que costó <b>cada unidad</b>. El stock se suma y el costo del producto queda actualizado.</p>
+      <p class="nota" style="margin-top:0">Escriba la cantidad comprada y lo que costó <b>cada unidad</b>. Las unidades se suman al lugar elegido y el costo del producto queda actualizado.</p>
+      <div class="seg-dest" role="radiogroup" aria-label="Dónde se guarda la compra">
+        <label><input type="radio" name="c-dest" value="bodega" checked><span>Guardar en bodega</span></label>
+        <label><input type="radio" name="c-dest" value="tienda"><span>Directo a la tienda</span></label></div>
       <input id="buscar-compra" class="buscar" placeholder="Buscar producto…">
-      <div class="scroll-modal"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Stock</th><th>Cantidad</th><th>Costo unit.</th></tr></thead><tbody>${filas}</tbody></table></div>
+      <div class="scroll-modal"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Tienda</th><th class="num">Bodega</th><th>Cantidad</th><th>Costo unit.</th></tr></thead><tbody>${filas}</tbody></table></div>
       <div class="form" style="margin-top:10px"><label class="chk"><input type="checkbox" id="c-caja" checked> Pagué con dinero de la caja</label>
       <label>Nota (opcional)<input id="c-nota" placeholder="Ej: compra en la plaza"></label></div>
       <div id="m-err" class="error-msg"></div>
@@ -251,17 +304,19 @@
     }
     if (!items.length) { err.textContent = 'Escriba la cantidad de al menos un producto.'; return; }
     const total = items.reduce((a, i) => a + i.cantidad * i.costo, 0), ts = Date.now(), key = DB.newKey('reposiciones');
+    const destino = ($('input[name="c-dest"]:checked') || {}).value === 'tienda' ? 'tienda' : 'bodega', campo = destino === 'tienda' ? 'stock' : 'bodega';
     const upd = {};
-    upd['reposiciones/' + key] = { ts, fecha: hoy(), items, total, deCaja: $('#c-caja').checked, nota: $('#c-nota').value.trim() };
-    items.forEach(i => { upd['productos/' + i.id + '/stock'] = DB.inc(i.cantidad); upd['productos/' + i.id + '/costo'] = i.costo; });
+    upd['reposiciones/' + key] = { ts, fecha: hoy(), items, total, destino, deCaja: $('#c-caja').checked, nota: $('#c-nota').value.trim() };
+    items.forEach(i => { upd['productos/' + i.id + '/' + campo] = DB.inc(i.cantidad); upd['productos/' + i.id + '/costo'] = i.costo; });
     try { await DB.update(upd); Modal.cerrar(); toast('Compra registrada: ' + money(total), 'ok'); } catch (e) { errMsg(e); }
   }
   function modalMerma() {
     Modal.abrir(`<h2>Merma o ajuste de inventario</h2>
       <p class="nota" style="margin-top:0">Use esto para productos vencidos, dañados, faltantes en un conteo, o un sobrante encontrado. Las pérdidas descuentan de la ganancia.</p>
-      <div class="form"><label>Producto<select id="mm-prod">${prods().map(p => `<option value="${p.id}">${esc(p.nombre)} (stock ${p.stock || 0})</option>`).join('')}</select></label>
+      <div class="form"><label>Producto<select id="mm-prod">${prods().map(p => `<option value="${p.id}">${esc(p.nombre)} (tienda ${p.stock || 0} · bodega ${p.bodega || 0})</option>`).join('')}</select></label>
+      <label>Dónde<select id="mm-lugar"><option value="tienda">En la tienda</option><option value="bodega">En la bodega</option></select></label>
       <div class="fila2"><label>Cantidad<input id="mm-cant" inputmode="numeric" placeholder="0"></label>
-      <label>Motivo<select id="mm-tipo"><option value="vencido">Vencido</option><option value="dañado">Dañado</option><option value="faltante">Faltante en conteo</option><option value="sobrante">Sobrante (suma al stock)</option></select></label></div>
+      <label>Motivo<select id="mm-tipo"><option value="vencido">Vencido</option><option value="dañado">Dañado</option><option value="faltante">Faltante en conteo</option><option value="sobrante">Sobrante (suma al inventario)</option></select></label></div>
       <label>Nota (opcional)<input id="mm-nota"></label></div>
       <div id="m-err" class="error-msg"></div>
       <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-prim" data-accion="a:mermaOk">Guardar</button></div>`, { ancho: 520 });
@@ -269,12 +324,12 @@
   async function mermaOk() {
     const id = $('#mm-prod').value, q = P($('#mm-cant').value), tipo = $('#mm-tipo').value, p = S.productos[id], err = $('#m-err');
     if (!p || !(q > 0)) { err.textContent = 'Escriba una cantidad mayor a 0.'; return; }
-    const suma = tipo === 'sobrante';
-    if (!suma && q > (p.stock || 0)) { err.textContent = 'La cantidad es mayor al stock actual (' + (p.stock || 0) + ').'; return; }
+    const suma = tipo === 'sobrante', lugar = $('#mm-lugar').value === 'bodega' ? 'bodega' : 'tienda', campo = lugar === 'bodega' ? 'bodega' : 'stock', hay = p[campo] || 0;
+    if (!suma && q > hay) { err.textContent = 'La cantidad es mayor a lo que hay en la ' + lugar + ' (' + hay + ').'; return; }
     const perdida = suma ? 0 : q * (p.costo || 0), fecha = hoy(), key = DB.newKey('mermas');
     const upd = {};
-    upd['mermas/' + key] = { ts: Date.now(), fecha, id, nombre: p.nombre, cantidad: q, tipo, costoTotal: perdida, nota: $('#mm-nota').value.trim() };
-    upd['productos/' + id + '/stock'] = DB.inc(suma ? q : -q);
+    upd['mermas/' + key] = { ts: Date.now(), fecha, id, nombre: p.nombre, cantidad: q, tipo, lugar, costoTotal: perdida, nota: $('#mm-nota').value.trim() };
+    upd['productos/' + id + '/' + campo] = DB.inc(suma ? q : -q);
     if (perdida > 0) upd['resumen/dias/' + fecha + '/mermas'] = DB.inc(perdida);
     try { await DB.update(upd); Modal.cerrar(); toast(suma ? 'Sobrante sumado al stock.' : 'Merma registrada.', 'ok'); } catch (e) { errMsg(e); }
   }
@@ -283,24 +338,24 @@
   function vProductos() {
     let filas = '', catAct = null;
     prods().forEach(p => {
-      if (p.categoria !== catAct) { catAct = p.categoria; filas += `<tr class="cat-fila"><td colspan="6">${esc(CATN[catAct] || catAct)}</td></tr>`; }
+      if (p.categoria !== catAct) { catAct = p.categoria; filas += `<tr class="cat-fila"><td colspan="7">${esc(CATN[catAct] || catAct)}</td></tr>`; }
       const marg = (p.precio || 0) - (p.costo || 0);
       filas += `<tr class="${p.activo === false ? 'inactivo' : ''}" data-n="${esc(String(p.nombre).toLowerCase())}">
         <td><span class="p-celda">${U.img(p.imagen) ? `<img class="p-mini" src="${esc(p.imagen)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="p-mini p-mini-vacia"></span>'}<span>${esc(p.nombre)} ${p.activo === false ? '<span class="etq gris">No visible</span>' : ''}</span></span></td>
         <td class="num">${money(p.precio)}</td>
         <td class="num">${p.costo > 0 ? money(p.costo) : '<span class="etq warn">Sin costo</span>'}</td>
-        <td class="num">${p.costo > 0 ? money(marg) : '—'}</td><td class="num">${p.stock || 0}</td>
+        <td class="num">${p.costo > 0 ? money(marg) : '—'}</td><td class="num">${p.stock || 0}</td><td class="num">${p.bodega || 0}</td>
         <td class="acc"><button class="btn btn-sec btn-peq" data-accion="a:editProd" data-id="${p.id}">Editar</button>
         <button class="btn btn-sec btn-peq" data-accion="a:delProd" data-id="${p.id}">🗑</button></td></tr>`;
     });
     return `<div class="barra"><button class="btn btn-prim" data-accion="a:nuevoProd">➕ Nuevo producto</button>
       <input id="buscar-prod" class="buscar" style="max-width:280px;margin:0" placeholder="Buscar…"><span class="espacio"></span></div>
       ${!prods().length ? `<div class="alerta-caja">Aún no hay productos. <button class="btn btn-prim btn-peq" data-accion="a:seed">Cargar los productos iniciales</button></div>` : ''}
-      <div style="overflow:auto"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Ganancia unid.</th><th class="num">Stock</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`;
+      <div style="overflow:auto"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Ganancia unid.</th><th class="num">Tienda</th><th class="num">Bodega</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
   function modalProducto(id) {
     editId = id || null;
-    const nuevo = !id, p = id ? S.productos[id] : { nombre: '', categoria: 'bebidas', precio: '', costo: '', stock: 0, minimo: 5, activo: true };
+    const nuevo = !id, p = id ? S.productos[id] : { nombre: '', categoria: 'bebidas', precio: '', costo: '', stock: 0, bodega: 0, surtido: '', minimo: 5, activo: true };
     if (!p) return;
     Modal.abrir(`<h2>${nuevo ? 'Nuevo producto' : 'Editar producto'}</h2><div class="form">
       <label>Nombre<input id="f-nombre" value="${esc(p.nombre)}" autofocus></label>
@@ -309,10 +364,12 @@
       <label>Categoría<select id="f-cat">${ORDEN.map(c => `<option value="${c}" ${p.categoria === c ? 'selected' : ''}>${CATN[c]}</option>`).join('')}</select></label>
       <div class="fila2"><label>Precio de venta<input id="f-precio" inputmode="numeric" value="${p.precio === '' ? '' : (p.precio || 0)}"></label>
       <label>Costo (lo que cuesta)<input id="f-costo" inputmode="numeric" value="${p.costo === '' ? '' : (p.costo || 0)}"></label></div>
-      <div class="fila2">${nuevo ? `<label>Cantidad inicial<input id="f-stock" inputmode="numeric" value="0"></label>` : `<label>Stock actual<input value="${p.stock || 0}" disabled></label>`}
-      <label>Mínimo (avisar al llegar a)<input id="f-min" inputmode="numeric" value="${p.minimo == null ? 5 : p.minimo}"></label></div>
+      <div class="fila2">${nuevo ? `<label>Cantidad inicial en tienda<input id="f-stock" inputmode="numeric" value="0"></label><label>Cantidad inicial en bodega<input id="f-bodega" inputmode="numeric" value="0"></label>`
+        : `<label>En tienda<input value="${p.stock || 0}" disabled></label><label>En bodega<input value="${p.bodega || 0}" disabled></label>`}</div>
+      <div class="fila2"><label>Cantidad fija en tienda<input id="f-surt" inputmode="numeric" value="${p.surtido || ''}" placeholder="Ej: 10"></label>
+      <label>Mínimo total (avisar compra)<input id="f-min" inputmode="numeric" value="${p.minimo == null ? 5 : p.minimo}"></label></div>
       <label class="chk"><input type="checkbox" id="f-activo" ${p.activo !== false ? 'checked' : ''}> Visible en la tienda</label></div>
-      ${nuevo ? '' : '<p class="nota">El stock se modifica con “Registrar compra” o “Merma / ajuste” para que todo quede registrado.</p>'}
+      ${nuevo ? '' : '<p class="nota">Las cantidades cambian con “Registrar compra”, “Surtir tienda” o “Merma / ajuste” para que todo quede registrado.</p>'}
       <div id="m-err" class="error-msg"></div>
       <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-prim" data-accion="a:guardarProd">Guardar</button></div>`, { ancho: 520 });
   }
@@ -323,10 +380,10 @@
     if (dup) { err.textContent = 'Ya existe un producto con ese nombre.'; return; }
     const imagen = $('#f-img').value.trim();
     if (imagen && !U.img(imagen)) { err.textContent = 'El enlace de la imagen debe empezar por https:// o http://'; return; }
-    const d = { nombre, imagen: imagen || null, categoria: $('#f-cat').value, precio: P($('#f-precio').value), costo: P($('#f-costo').value), minimo: P($('#f-min').value), activo: $('#f-activo').checked };
+    const d = { nombre, imagen: imagen || null, categoria: $('#f-cat').value, precio: P($('#f-precio').value), costo: P($('#f-costo').value), minimo: P($('#f-min').value), surtido: P($('#f-surt').value), activo: $('#f-activo').checked };
     try {
       const upd = {};
-      if (!editId) { const k = DB.newKey('productos'); upd['productos/' + k] = Object.assign({}, d, { stock: P($('#f-stock').value) }); }
+      if (!editId) { const k = DB.newKey('productos'); upd['productos/' + k] = Object.assign({}, d, { stock: P($('#f-stock').value), bodega: P($('#f-bodega').value) }); }
       else Object.entries(d).forEach(([k, v]) => { upd['productos/' + editId + '/' + k] = v; });
       await DB.update(upd); Modal.cerrar(); toast('Producto guardado.', 'ok');
     } catch (e) { errMsg(e); }
@@ -351,25 +408,45 @@
   function modalTrab(codigo) {
     editId = codigo || null;
     let t = codigo ? S.trabajadores[codigo] : null;
-    if (!codigo) { let n = 1; while (S.trabajadores[U.pad(n).padStart(3, '0')]) n++; t = { nombre: '', tipo: 'trabajador', activo: true, _c: String(n).padStart(3, '0') }; }
+    if (!codigo) { const al = aliasCodigos(); let n = 1; while (S.trabajadores[String(n).padStart(3, '0')] || al[String(n).padStart(3, '0')]) n++; t = { nombre: '', tipo: 'trabajador', activo: true, _c: String(n).padStart(3, '0') }; }
     Modal.abrir(`<h2>${codigo ? 'Editar' : 'Nuevo'} trabajador</h2><div class="form">
-      <div class="fila2"><label>Código (3 dígitos)<input id="t-cod" inputmode="numeric" maxlength="3" value="${codigo || t._c}" ${codigo ? 'disabled' : ''}></label>
+      <div class="fila2"><label>Código (3 dígitos)<input id="t-cod" inputmode="numeric" maxlength="3" value="${codigo || t._c}"></label>
       <label>Tipo<select id="t-tipo"><option value="trabajador" ${t.tipo !== 'visita' ? 'selected' : ''}>Trabajador</option><option value="visita" ${t.tipo === 'visita' ? 'selected' : ''}>Visita</option></select></label></div>
       <label>Nombre<input id="t-nom" value="${esc(t.nombre)}" autofocus></label>
       <label class="chk"><input type="checkbox" id="t-act" ${t.activo !== false ? 'checked' : ''}> Activo</label></div>
+      ${codigo ? '<p class="nota">Para cambiar el código, escriba el nuevo. Desde ese momento la persona debe usar el código nuevo; el anterior deja de funcionar. Su historial de compras se conserva.</p>' : ''}
       <div id="m-err" class="error-msg"></div>
       <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-prim" data-accion="a:guardarTrab">Guardar</button></div>`, { ancho: 460 });
   }
   async function guardarTrab() {
-    const cod = editId || $('#t-cod').value.trim(), nom = $('#t-nom').value.trim(), err = $('#m-err');
+    const cod = $('#t-cod').value.trim(), nom = $('#t-nom').value.trim(), err = $('#m-err');
     if (!/^\d{3}$/.test(cod)) { err.textContent = 'El código debe tener exactamente 3 dígitos.'; return; }
     if (!nom) { err.textContent = 'Escriba el nombre.'; return; }
+    const cambia = !editId || cod !== editId;
     try {
-      if (!editId) { const ya = await DB.get('trabajadores/' + cod); if (ya) { err.textContent = 'Ese código ya está en uso.'; return; } }
-      await DB.update({ ['trabajadores/' + cod]: { nombre: nom, tipo: $('#t-tipo').value, activo: $('#t-act').checked } });
-      S.trabajadores[cod] = { nombre: nom, tipo: $('#t-tipo').value, activo: $('#t-act').checked };
-      Modal.cerrar(); toast('Guardado.', 'ok'); render();
+      if (cambia) {
+        const ya = await DB.get('trabajadores/' + cod); if (ya) { err.textContent = 'Ese código ya está en uso por ' + (ya.nombre || 'otra persona') + '.'; return; }
+        const dueño = aliasCodigos()[cod];
+        if (dueño && dueño !== editId) { err.textContent = 'Ese código lo usó antes ' + ((S.trabajadores[dueño] || {}).nombre || 'otra persona') + '. Elija otro para no mezclar historiales.'; return; }
+      }
+      const previo = editId ? (S.trabajadores[editId] || {}) : {};
+      const datos = { nombre: nom, tipo: $('#t-tipo').value, activo: $('#t-act').checked };
+      let anteriores = U.arr(previo.anteriores);
+      if (editId && cambia) anteriores = anteriores.filter(c => c !== cod).concat([editId]);
+      if (anteriores.length) datos.anteriores = anteriores;
+      const upd = { ['trabajadores/' + cod]: datos };
+      if (editId && cambia) upd['trabajadores/' + editId] = null;
+      await DB.update(upd);
+      if (editId && cambia) delete S.trabajadores[editId];
+      S.trabajadores[cod] = datos;
+      Modal.cerrar(); toast(editId && cambia ? 'Código cambiado: ahora es ' + cod + '.' : 'Guardado.', 'ok'); render();
     } catch (e) { errMsg(e); }
+  }
+  /* Códigos anteriores → código actual (para no partir el historial cuando se cambia el código) */
+  function aliasCodigos() {
+    const al = {};
+    Object.entries(S.trabajadores).forEach(([c, t]) => U.arr(t && t.anteriores).forEach(a => { if (!S.trabajadores[a]) al[a] = c; }));
+    return al;
   }
 
   /* ---------- CONSUMO POR TRABAJADOR (reporte mensual) ---------- */
@@ -382,11 +459,11 @@
   const catItem = i => i.categoria || (S.productos[i.id] || {}).categoria || 'otros';
   const catNombre = c => CATN[c] || 'Otros';
   function agruparConsumo(ventas) {
-    const personas = {};
+    const personas = {}, al = aliasCodigos();
     ventas.forEach(v => {
-      const k = v.codigo || '?';
+      const k = al[v.codigo] || v.codigo || '?', actual = S.trabajadores[k];
       const p = personas[k] || (personas[k] = { codigo: k, nombre: v.nombre, tipo: v.tipo, total: 0, nCompras: 0, cats: {}, productos: {} });
-      p.nombre = v.nombre || p.nombre; p.nCompras++;
+      p.nombre = (actual && actual.nombre) || v.nombre || p.nombre; p.nCompras++;
       U.arr(v.items).forEach(i => {
         const c = catItem(i), sub = (i.precio || 0) * (i.cantidad || 0);
         p.cats[c] = (p.cats[c] || 0) + sub; p.total += sub;
@@ -613,13 +690,13 @@
     U.descargar('ventas-' + hoy() + '.csv', csv(filas), 'text/csv;charset=utf-8');
   }
   function csvInv() {
-    const filas = [['Categoría', 'Producto', 'Precio', 'Costo', 'Stock', 'Mínimo', 'Visible']];
-    prods().forEach(p => filas.push([CATN[p.categoria] || p.categoria, p.nombre, p.precio || 0, p.costo || 0, p.stock || 0, p.minimo || 0, p.activo === false ? 'No' : 'Sí']));
+    const filas = [['Categoría', 'Producto', 'Precio', 'Costo', 'En tienda', 'Fija en tienda', 'Bodega', 'Total', 'Mínimo', 'Visible']];
+    prods().forEach(p => filas.push([CATN[p.categoria] || p.categoria, p.nombre, p.precio || 0, p.costo || 0, p.stock || 0, p.surtido || 0, p.bodega || 0, totalInv(p), p.minimo || 0, p.activo === false ? 'No' : 'Sí']));
     U.descargar('inventario-' + hoy() + '.csv', csv(filas), 'text/csv;charset=utf-8');
   }
   async function json() {
-    const [pr, tr, ve, re, me, ci, pa] = await Promise.all(['productos', 'trabajadores', 'ventas', 'reposiciones', 'mermas', 'cierres', 'pastoral'].map(p => DB.get(p)));
-    const todo = { productos: pr, trabajadores: tr, ventas: ve, reposiciones: re, mermas: me, cierres: ci, pastoral: pa };
+    const [pr, tr, ve, re, me, ci, pa, tl] = await Promise.all(['productos', 'trabajadores', 'ventas', 'reposiciones', 'mermas', 'cierres', 'pastoral', 'traslados'].map(p => DB.get(p)));
+    const todo = { productos: pr, trabajadores: tr, ventas: ve, reposiciones: re, mermas: me, cierres: ci, pastoral: pa, traslados: tl };
     U.descargar('copia-tienda-san-jose-' + hoy() + '.json', JSON.stringify(todo, null, 1), 'application/json');
   }
   async function recalcular() {
@@ -637,7 +714,7 @@
     if (prods().length && !confirm('Ya hay productos. ¿Cargar la lista inicial de todas formas?')) return;
     const upd = {};
     window.TSJ_SEED.forEach(([categoria, nombre, stock, precio]) => {
-      upd['productos/' + U.slug(nombre)] = { nombre, categoria, precio, costo: 0, stock, minimo: 5, activo: precio > 0 };
+      upd['productos/' + U.slug(nombre)] = { nombre, categoria, precio, costo: 0, stock, bodega: 0, minimo: 5, activo: precio > 0 };
     });
     if (!S.trabajadores['000']) upd['trabajadores/000'] = { nombre: 'Visita', tipo: 'visita', activo: true };
     try { await DB.update(upd); S.trabajadores['000'] = S.trabajadores['000'] || { nombre: 'Visita', tipo: 'visita', activo: true }; toast('Productos iniciales cargados. Complete los costos.', 'ok'); render(); } catch (e) { errMsg(e); }
@@ -653,6 +730,8 @@
       case 'anular': modalAnular(el.dataset.id); break;
       case 'anularOk': anularOk(); break;
       case 'compra': modalCompra(); break;
+      case 'surtir': modalSurtir(); break;
+      case 'surtirOk': surtirOk(); break;
       case 'compraOk': compraOk(); break;
       case 'merma': modalMerma(); break;
       case 'mermaOk': mermaOk(); break;
@@ -689,7 +768,9 @@
   /* Eventos de formularios dentro del panel */
   document.addEventListener('change', e => {
     const t = e.target;
-    if (t.classList && t.classList.contains('inp-min')) {
+    if (t.classList && t.classList.contains('inp-surt')) {
+      DB.update({ ['productos/' + t.dataset.id + '/surtido']: P(t.value) || null }).then(() => toast('Cantidad fija en tienda actualizada.', 'ok')).catch(errMsg);
+    } else if (t.classList && t.classList.contains('inp-min')) {
       DB.update({ ['productos/' + t.dataset.id + '/minimo']: P(t.value) }).then(() => toast('Mínimo actualizado.', 'ok')).catch(errMsg);
     } else if (t.id === 'c-desde') { const ms = new Date(t.value).getTime(); if (!isNaN(ms)) { desdeTs = ms; calcularCierre(); } }
   });
@@ -698,6 +779,7 @@
     if (t.id === 'c-retiros' || t.id === 'c-contado') actualizarDif();
     else if (t.id === 'f-img') { const v = t.value.trim(), pv = $('#f-prev'); if (pv) pv.innerHTML = U.img(v) ? `<img src="${esc(v)}" alt="" referrerpolicy="no-referrer">` : ''; }
     else if (t.id === 'buscar-prod') { const q = t.value.toLowerCase(); $$('#admin-contenido tbody tr[data-n]').forEach(tr => { tr.hidden = !tr.dataset.n.includes(q); }); }
+    else if (t.id === 'buscar-surtir') { const q = t.value.toLowerCase(); $$('.fila-surtir').forEach(tr => { tr.hidden = !tr.dataset.n.includes(q); }); }
     else if (t.id === 'buscar-compra') { const q = t.value.toLowerCase(); $$('.fila-compra').forEach(tr => { tr.hidden = !tr.dataset.n.includes(q); }); }
   });
 

@@ -40,9 +40,15 @@ Abra `generar-clave.html` (desde la dirección publicada o `localhost`), escriba
 
 1. Administrador → **Productos → Cargar los productos iniciales** (si aún no se hizo).
 2. Complete el **costo** de cada producto (sin costo la ganancia aparece inflada). El resumen avisa cuántos faltan.
-3. Ajuste el **mínimo** de cada producto en *Inventario* (una gaseosa de mucha rotación necesita un mínimo mayor que un producto que casi no se vende).
+3. En *Inventario*, para cada producto:
+   - **Fija en tienda**: cuántas unidades quiere tener siempre a la vista (ej. 10 Coca-Colas).
+   - **Mínimo**: cuando el total (tienda + bodega) llegue a ese número, aparece en “Urgente comprar”.
 4. Cree los trabajadores en *Trabajadores* con su código de 3 dígitos. `000` queda para Visita.
 5. Producto **Café**: quedó no visible porque la tabla traía precio 0. Edítelo con su precio para mostrarlo.
+
+## Rutina diaria (al cerrar la jornada)
+
+Administrador → Inventario → **Surtir tienda desde bodega**. La app sugiere cuántas unidades pasar para volver a la cantidad fija en tienda (si se vendieron 3, sugiere 3). Ponga esas unidades en la tienda y confirme.
 
 ## 7. Rutina semanal (viernes, al cerrar)
 
@@ -56,6 +62,8 @@ Abra `generar-clave.html` (desde la dirección publicada o `localhost`), escriba
 - **Ganancia** = ventas − costo de lo vendido − mermas.
 - **Gastos pastorales:** las utilidades de la tienda se destinan a la pastoral. Cada aporte se registra en Administración → **Pastoral** (fecha, valor, concepto y si salió de la caja). Aparece en el resumen (hoy, mes y acumulado), en el calendario y en el cierre semanal. **Utilidad disponible** = ganancia acumulada − gasto pastoral acumulado. Un gasto registrado por error se anula; no se borra.
 - **Costo:** cada compra de reposición actualiza el costo del producto al último valor pagado.
+- **Dos inventarios:** *En tienda* es lo que está a la vista y lo que descuentan las ventas (es el número que ven los compradores). *Bodega* es lo guardado. Las compras entran a la bodega (o directo a la tienda si se elige). “Surtir tienda” pasa unidades de la bodega a la tienda. Las mermas se registran en el lugar donde ocurrieron.
+- **Cambiar el código de un trabajador:** Trabajadores → Editar → escriba el código nuevo. El anterior deja de funcionar y su historial de consumo se conserva.
 - **Sin internet:** la tienda avisa y no deja registrar compras hasta que regrese la conexión (Realtime Database no guarda ventas pendientes de forma duradera en la web).
 - **Inactividad:** a los 60 segundos sin tocar la tablet se limpia la compra; el panel de administrador se cierra a los 5 minutos sin uso. Los tiempos se cambian en `config.js`.
 

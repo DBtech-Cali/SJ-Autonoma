@@ -240,6 +240,7 @@ b,strong{font-weight:650}
 .mini-in{width:84px;padding:8px 10px;text-align:center}
 .scroll-modal{max-height:46vh;overflow:auto;border-radius:var(--rad-s);border:1px solid var(--sep)}
 .scroll-modal .tabla{box-shadow:none;border-radius:0}
+.scroll-modal .tabla thead th{position:sticky;top:0;z-index:1}
 
 /* ---------- Administrador ---------- */
 .admin-tabs{display:flex;gap:2px;overflow-x:auto;margin:14px 20px 0;padding:3px;background:var(--relleno);border-radius:14px;
@@ -305,6 +306,16 @@ b,strong{font-weight:650}
 .etq.warn{background:var(--warnbg);color:var(--warn)}
 .etq.mal{background:var(--malbg);color:var(--mal)}
 .etq.gris{background:var(--relleno);color:var(--gris)}
+.etq.info{background:var(--acento-suave);color:var(--acento)}
+.alerta-caja.alerta-info{background:var(--acento-suave);color:var(--acento)}
+.fila-surtir.con-sug td{background:var(--acento-suave)}
+.fila-surtir.con-sug .q{border-color:var(--acento)}
+.seg-dest{display:flex;gap:2px;padding:3px;margin:4px 0 10px;background:var(--relleno);border-radius:14px;width:max-content;max-width:100%}
+.seg-dest label{cursor:pointer}
+.seg-dest input{position:absolute;opacity:0;pointer-events:none}
+.seg-dest span{display:block;min-height:40px;padding:9px 16px;border-radius:11px;font-weight:600;font-size:15px}
+.seg-dest input:checked+span{background:var(--sup);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg-dest input:focus-visible+span{box-shadow:var(--anillo)}
 
 .urgentes{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .urg{position:relative;background:var(--sup);border-radius:var(--rad-s);padding:12px 14px 12px 22px;box-shadow:var(--sombra);overflow:hidden}
