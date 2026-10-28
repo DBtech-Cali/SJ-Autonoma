@@ -52,14 +52,15 @@ Administrador → Inventario → **Surtir tienda desde bodega**. La app sugiere 
 
 ## 7. Rutina semanal (viernes, al cerrar)
 
-1. Administrador → **Cierre semanal**: la app calcula lo que debería haber en efectivo (ventas − compras de reposición pagadas de la caja − gastos pastorales pagados de la caja − retiros). Cuente el dinero **sin la base** y escríbalo; la app muestra la diferencia. Guarde el cierre.
+1. Administrador → **Cierre de caja** (se puede hacer cada noche o cada semana, cada vez que recoja el dinero): la app calcula lo que debería haber en efectivo (ventas − compras de reposición pagadas de la caja − gastos pastorales pagados de la caja − retiros). Cuente el dinero **sin la base** y escríbalo; la app muestra la diferencia. Guarde el cierre. Si falta dinero, el faltante queda registrado y se descuenta de la ganancia de ese día (si sobra, se suma). Si se equivocó al escribir el conteo, anule ese cierre y hágalo de nuevo.
 2. Administrador → **Respaldo → Copia completa (JSON)** y guárdela en un lugar seguro.
 
 ## Cómo funciona (resumen)
 
 - **Venta:** el trabajador elige productos → Pagar → digita su código de 3 dígitos → confirma su nombre → toca los billetes con los que paga, uno por cada billete (ej. 3 toques en $5.000 = $15.000; se muestra lo que falta o el cambio) → Confirmar. Se descuenta el stock y se registra costo, precio y ganancia **vigentes en ese momento** (si el precio cambia mañana, el historial no cambia).
 - **Errores:** antes de confirmar, el trabajador quita productos del carrito. Después de confirmar, solo el administrador puede **anular** la venta (Calendario → día → Anular); el stock se devuelve y queda registrada como anulada.
-- **Ganancia** = ventas − costo de lo vendido − mermas.
+- **Ganancia** = ventas − costo de lo vendido − mermas ± descuadres de caja. Las compras de reposición **no** restan de la ganancia: son inventario; su costo se descuenta cuando cada producto se vende.
+- **Obsequios:** los productos entregados como detalle (por ejemplo, a los jóvenes que colaboran) se registran en Inventario → Merma / ajuste → motivo “Obsequio”. Salen del inventario y cuentan como **gasto pastoral** a su costo, no como pérdida. Una baja ya registrada se puede cambiar con “Fue un obsequio” en Inventario → Bajas registradas.
 - **Gastos pastorales:** las utilidades de la tienda se destinan a la pastoral. Cada aporte se registra en Administración → **Pastoral** (fecha, valor, concepto y si salió de la caja). Aparece en el resumen (hoy, mes y acumulado), en el calendario y en el cierre semanal. **Utilidad disponible** = ganancia acumulada − gasto pastoral acumulado. Un gasto registrado por error se anula; no se borra.
 - **Costo:** cada compra de reposición actualiza el costo del producto al último valor pagado.
 - **Dos inventarios:** *En tienda* es lo que está a la vista y lo que descuentan las ventas (es el número que ven los compradores). *Bodega* es lo guardado. Las compras entran a la bodega (o directo a la tienda si se elige). “Surtir tienda” pasa unidades de la bodega a la tienda. Las mermas se registran en el lugar donde ocurrieron.

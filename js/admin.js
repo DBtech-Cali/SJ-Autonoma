@@ -5,11 +5,11 @@
   const ORDEN = ['bebidas', 'mecato', 'dulces', 'sal'];
   const CATN = { bebidas: 'Bebidas', mecato: 'Mecato', dulces: 'Dulces', sal: 'Sal' };
   const TABS = [['resumen', 'Resumen'], ['calendario', 'Calendario'], ['inventario', 'Inventario'], ['productos', 'Productos'],
-    ['trabajadores', 'Trabajadores'], ['consumo', 'Consumo'], ['pastoral', 'Pastoral'], ['cierre', 'Cierre semanal'], ['respaldo', 'Respaldo']];
+    ['trabajadores', 'Trabajadores'], ['consumo', 'Consumo'], ['pastoral', 'Pastoral'], ['cierre', 'Cierre de caja'], ['respaldo', 'Respaldo']];
   const esc = U.esc, money = U.money, P = U.parse;
   const hoy = () => U.fechaStr();
 
-  let tab = 'resumen', unsub = [], tLock = null, tRef = null, repos = {}, pastoral = {};
+  let tab = 'resumen', unsub = [], tLock = null, tRef = null, repos = {}, pastoral = {}, mermas = {};
   let past = { y: new Date().getFullYear(), m: new Date().getMonth() };
   const ahora = new Date();
   let cal = { y: ahora.getFullYear(), m: ahora.getMonth() }, calDia = hoy(), diaVentas = null;
@@ -19,7 +19,8 @@
   /* ---------- Datos derivados ---------- */
   const prods = () => Object.entries(S.productos).map(([id, p]) => Object.assign({ id }, p))
     .sort((a, b) => (ORDEN.indexOf(a.categoria) - ORDEN.indexOf(b.categoria)) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
-  const gan = d => d ? (d.ventas || 0) - (d.costo || 0) - (d.mermas || 0) : 0;
+  /* Ganancia = ventas − costo de lo vendido − mermas ± descuadre de caja (faltante resta, sobrante suma) */
+  const gan = d => d ? (d.ventas || 0) - (d.costo || 0) - (d.mermas || 0) + (d.caja || 0) : 0;
   /* Dos inventarios: stock = en la tienda (lo que se vende), bodega = guardado. El mínimo se mide sobre el total. */
   const totalInv = p => (p.stock || 0) + (p.bodega || 0);
   const ratio = p => (p.minimo > 0 ? totalInv(p) / p.minimo : totalInv(p));
@@ -28,12 +29,12 @@
   const sugerido = p => (p.surtido > 0 ? Math.max(0, Math.min(p.surtido - (p.stock || 0), p.bodega || 0)) : 0);
   const porSurtir = () => prods().filter(p => p.activo !== false && sugerido(p) > 0);
   function suma(filtro) {
-    const r = { ventas: 0, costo: 0, mermas: 0, nVentas: 0 };
+    const r = { ventas: 0, costo: 0, mermas: 0, caja: 0, nVentas: 0 };
     Object.entries(S.resumen).forEach(([f, d]) => {
       if (!filtro(f)) return;
-      r.ventas += d.ventas || 0; r.costo += d.costo || 0; r.mermas += d.mermas || 0; r.nVentas += d.nVentas || 0;
+      r.ventas += d.ventas || 0; r.costo += d.costo || 0; r.mermas += d.mermas || 0; r.caja += d.caja || 0; r.nVentas += d.nVentas || 0;
     });
-    r.ganancia = r.ventas - r.costo - r.mermas;
+    r.ganancia = r.ventas - r.costo - r.mermas + r.caja;
     r.invertido = 0; r.nCompras = 0;
     Object.values(repos).forEach(c => { if (c && c.fecha && filtro(c.fecha)) { r.invertido += c.total || 0; r.nCompras++; } });
     r.pastoral = 0; r.nPastoral = 0;
@@ -59,13 +60,14 @@
     unsub = [
       DB.listen('resumen/dias', v => { S.resumen = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los resúmenes.', 'error'); }),
       DB.listen('reposiciones', v => { repos = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer las compras.', 'error'); }),
-      DB.listen('pastoral', v => { pastoral = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los gastos pastorales.', 'error'); })
+      DB.listen('pastoral', v => { pastoral = v || {}; refrescar(); }, e => { console.error(e); toast('Sin permiso para leer los gastos pastorales.', 'error'); }),
+      DB.listen('mermas', v => { mermas = v || {}; refrescar(); }, e => { console.error(e); })
     ];
     bloqueo(); render();
   }
   function salir() {
     unsub.forEach(u => { if (u) u(); }); unsub = [];
-    clearTimeout(tLock); clearTimeout(tRef); S.resumen = {}; repos = {}; pastoral = {};
+    clearTimeout(tLock); clearTimeout(tRef); S.resumen = {}; repos = {}; pastoral = {}; mermas = {};
   }
   function bloqueo() {
     clearTimeout(tLock);
@@ -102,6 +104,8 @@
       <div class="det">Ventas · ${r.nVentas} venta${r.nVentas === 1 ? '' : 's'}</div>
       <div class="t-filas">
         <div><span>Ganancia</span><b class="gan-s ${r.ganancia < 0 ? 'neg' : ''}">${money(r.ganancia)}</b></div>
+        ${r.mermas ? `<div class="t-sub"><span>incluye pérdidas por mermas</span><b>−${money(r.mermas)}</b></div>` : ''}
+        ${r.caja ? `<div class="t-sub"><span>incluye ${r.caja < 0 ? 'faltante' : 'sobrante'} de caja</span><b class="${r.caja < 0 ? 'neg' : ''}">${r.caja > 0 ? '+' : '−'}${money(Math.abs(r.caja))}</b></div>` : ''}
         <div><span>Invertido en compras${r.nCompras ? ` <small>(${r.nCompras})</small>` : ''}</span><b class="inv-s">${money(r.invertido)}</b></div>
         <div><span>Gasto pastoral${r.nPastoral ? ` <small>(${r.nPastoral})</small>` : ''}</span><b class="past-s">${money(r.pastoral)}</b></div>
         ${conSaldo ? `<div class="t-saldo"><span>Utilidad disponible</span><b class="${r.disponible < 0 ? 'neg' : ''}">${money(r.disponible)}</b></div>` : ''}
@@ -123,7 +127,7 @@
     const h = suma(f => f === hoy()), m = suma(f => f.startsWith(mesK)), g = suma(() => true);
     const sinCosto = prods().filter(p => p.activo !== false && !(p.costo > 0));
     return `<div class="tarjetas">${tarjeta('Hoy', h)}${tarjeta('Este mes', m)}${tarjeta('Total acumulado', g, true)}</div>
-      <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes). Invertido = total de las compras de reposición registradas. Gasto pastoral = aportes registrados en la pestaña Pastoral. Utilidad disponible = ganancia acumulada − gasto pastoral acumulado.</p>
+      <p class="nota">Ganancia = ventas − costo de lo vendido − mermas (productos vencidos, dañados o faltantes) ± descuadres del cierre de caja. Las compras <b>no</b> restan de la ganancia: son inventario, y su costo se descuenta cuando el producto se vende. Los obsequios cuentan como gasto pastoral, no como pérdida. Invertido = total de las compras de reposición registradas. Gasto pastoral = aportes registrados en la pestaña Pastoral. Utilidad disponible = ganancia acumulada − gasto pastoral acumulado.</p>
       ${sinCosto.length ? `<div class="alerta-caja">⚠ ${sinCosto.length} producto${sinCosto.length === 1 ? '' : 's'} sin costo: la ganancia se ve más alta de lo real hasta completarlos.
         <button class="btn btn-sec btn-peq" data-accion="a:tab" data-tab="productos">Completar costos</button></div>` : ''}
       ${avisoSurtir()}
@@ -145,14 +149,14 @@
       const f = mesK + '-' + U.pad(d), r = S.resumen[f], x = extra[f] || {};
       celdas += `<button class="dia ${f === hoy() ? 'hoy' : ''} ${f === calDia ? 'sel' : ''}" data-accion="a:dia" data-dia="${f}"><span class="n">${d}</span>
         ${r ? `<span class="v">${U.corto(r.ventas)}</span><span class="g ${gan(r) < 0 ? 'neg' : ''}">${U.corto(gan(r))}</span>` : ''}
-        ${x.compras ? `<span class="c">−${U.corto(x.compras)}</span>` : ''}${x.pastoral ? `<span class="p">♥ ${U.corto(x.pastoral)}</span>` : ''}</button>`;
+        ${x.compras ? `<span class="c">−${U.corto(x.compras)}</span>` : ''}${x.pastoral ? `<span class="p">♥ ${U.corto(x.pastoral)}</span>` : ''}${r && r.caja < 0 ? `<span class="f">⚠ ${U.corto(r.caja)}</span>` : ''}</button>`;
     }
     return `<div class="cal-enc"><button class="btn btn-sec btn-peq" data-accion="a:calMes" data-d="-1">◀</button><h2>${esc(nombreMes)}</h2>
       <button class="btn btn-sec btn-peq" data-accion="a:calMes" data-d="1">▶</button></div>
       <p class="nota" style="margin-top:0">Mes: <b>${money(tot.ventas)}</b> en ventas · ganancia <b style="color:var(--ok)">${money(tot.ganancia)}</b> · ${tot.nVentas} venta${tot.nVentas === 1 ? '' : 's'} · compras <b style="color:var(--warn)">${money(tot.invertido)}</b> · pastoral <b style="color:var(--pastoral)">${money(tot.pastoral)}</b></p>
       <div class="cal-sem">${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div>${d}</div>`).join('')}</div>
       <div class="cal">${celdas}</div>
-      <p class="leyenda"><span class="v">$ azul</span> = ventas · <span class="g">$ verde</span> = ganancia · <span class="c">−$ naranja</span> = compras de reposición · <span class="p">♥ $ morado</span> = gasto pastoral. Toque un día para ver el detalle.</p>
+      <p class="leyenda"><span class="v">$ azul</span> = ventas · <span class="g">$ verde</span> = ganancia · <span class="c">−$ naranja</span> = compras de reposición · <span class="p">♥ $ morado</span> = gasto pastoral · <span class="f">⚠ rojo</span> = faltante en el cierre de caja. Toque un día para ver el detalle.</p>
       <div id="dia-detalle" class="panel"></div>`;
   }
   async function cargarDia() {
@@ -190,7 +194,7 @@
         <td>${g.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(g.monto)}</td></tr>`).join('')}</tbody></table></div>` : '');
     d.innerHTML = `<h3 style="margin-top:0">${U.fechaLarga(calDia)}</h3>
       <p class="nota" style="margin-top:0">Ventas <b>${money(r.ventas)}</b> · Costo ${money(r.costo)} · Mermas ${money(r.mermas)} · Ganancia <b style="color:var(--ok)">${money(gan(r))}</b> · ${r.nVentas || 0} venta${r.nVentas === 1 ? '' : 's'}
-        · Compras <b style="color:var(--warn)">${money(tC)}</b> · Pastoral <b style="color:var(--pastoral)">${money(tP)}</b></p>${cuerpo}${extraHtml}`;
+        · Compras <b style="color:var(--warn)">${money(tC)}</b> · Pastoral <b style="color:var(--pastoral)">${money(tP)}</b>${r.caja ? ` · ${r.caja < 0 ? 'Faltante' : 'Sobrante'} de caja <b style="color:var(${r.caja < 0 ? '--mal' : '--ok'})">${money(Math.abs(r.caja))}</b>` : ''}</p>${cuerpo}${extraHtml}`;
   }
   function modalAnular(id) {
     const v = (diaVentas || []).find(x => x.id === id); if (!v) return;
@@ -242,7 +246,10 @@
       <h3 style="margin-top:6px">🚨 Urgente comprar</h3>${listaUrgente()}
       <h3>Todo el inventario</h3>
       <p class="nota" style="margin-top:0"><b>En tienda</b>: lo que está a la vista y se vende. <b>Bodega</b>: lo guardado. <b>Fija en tienda</b>: cuántas unidades quiere tener siempre en la tienda; “Surtir tienda” completa esa cantidad desde la bodega. <b>Mínimo</b>: cuando el total (tienda + bodega) llegue a ese número, aparece en “Urgente comprar”.</p>
-      <div style="overflow:auto"><table class="tabla"><thead><tr><th>Producto</th><th class="num">En tienda</th><th class="num">Fija en tienda</th><th class="num">Bodega</th><th class="num">Total</th><th class="num">Mínimo</th><th>Estado</th></tr></thead><tbody>${filas || '<tr><td colspan="7">Sin productos.</td></tr>'}</tbody></table></div>`;
+      <div style="overflow:auto" id="tabla-inv"><table class="tabla"><thead><tr><th>Producto</th><th class="num">En tienda</th><th class="num">Fija en tienda</th><th class="num">Bodega</th><th class="num">Total</th><th class="num">Mínimo</th><th>Estado</th></tr></thead><tbody>${filas || '<tr><td colspan="7">Sin productos.</td></tr>'}</tbody></table></div>
+      <h3>Bajas registradas</h3>
+      <p class="nota" style="margin-top:0">Si una baja fue en realidad un obsequio (por ejemplo, detalles para los jóvenes que colaboran), use “Fue un obsequio”: deja de ser pérdida y pasa a gasto pastoral.</p>
+      ${listaBajas()}`;
   }
   /* ---------- SURTIR TIENDA (bodega → tienda) ---------- */
   function modalSurtir() {
@@ -312,26 +319,62 @@
   }
   function modalMerma() {
     Modal.abrir(`<h2>Merma o ajuste de inventario</h2>
-      <p class="nota" style="margin-top:0">Use esto para productos vencidos, dañados, faltantes en un conteo, o un sobrante encontrado. Las pérdidas descuentan de la ganancia.</p>
+      <p class="nota" style="margin-top:0">Use esto para productos vencidos, dañados, faltantes en un conteo, un sobrante encontrado, o productos entregados como obsequio. Las pérdidas descuentan de la ganancia; los obsequios se registran como gasto pastoral (a su costo).</p>
       <div class="form"><label>Producto<select id="mm-prod">${prods().map(p => `<option value="${p.id}">${esc(p.nombre)} (tienda ${p.stock || 0} · bodega ${p.bodega || 0})</option>`).join('')}</select></label>
       <label>Dónde<select id="mm-lugar"><option value="tienda">En la tienda</option><option value="bodega">En la bodega</option></select></label>
       <div class="fila2"><label>Cantidad<input id="mm-cant" inputmode="numeric" placeholder="0"></label>
-      <label>Motivo<select id="mm-tipo"><option value="vencido">Vencido</option><option value="dañado">Dañado</option><option value="faltante">Faltante en conteo</option><option value="sobrante">Sobrante (suma al inventario)</option></select></label></div>
-      <label>Nota (opcional)<input id="mm-nota"></label></div>
+      <label>Motivo<select id="mm-tipo"><option value="obsequio">Obsequio / entrega pastoral (no es pérdida)</option><option value="vencido">Vencido</option><option value="dañado">Dañado</option><option value="faltante">Faltante en conteo</option><option value="sobrante">Sobrante (suma al inventario)</option></select></label></div>
+      <label>Nota (opcional)<input id="mm-nota" placeholder="Ej: detalle para los jóvenes que ayudaron a organizar"></label></div>
       <div id="m-err" class="error-msg"></div>
       <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-prim" data-accion="a:mermaOk">Guardar</button></div>`, { ancho: 520 });
+    const sel = $('#mm-tipo'); if (sel) sel.value = 'vencido';
   }
   async function mermaOk() {
     const id = $('#mm-prod').value, q = P($('#mm-cant').value), tipo = $('#mm-tipo').value, p = S.productos[id], err = $('#m-err');
     if (!p || !(q > 0)) { err.textContent = 'Escriba una cantidad mayor a 0.'; return; }
     const suma = tipo === 'sobrante', lugar = $('#mm-lugar').value === 'bodega' ? 'bodega' : 'tienda', campo = lugar === 'bodega' ? 'bodega' : 'stock', hay = p[campo] || 0;
     if (!suma && q > hay) { err.textContent = 'La cantidad es mayor a lo que hay en la ' + lugar + ' (' + hay + ').'; return; }
-    const perdida = suma ? 0 : q * (p.costo || 0), fecha = hoy(), key = DB.newKey('mermas');
-    const upd = {};
-    upd['mermas/' + key] = { ts: Date.now(), fecha, id, nombre: p.nombre, cantidad: q, tipo, lugar, costoTotal: perdida, nota: $('#mm-nota').value.trim() };
+    const obsequio = tipo === 'obsequio', valor = suma ? 0 : q * (p.costo || 0), perdida = obsequio ? 0 : valor, fecha = hoy(), key = DB.newKey('mermas');
+    const nota = $('#mm-nota').value.trim(), upd = {};
+    upd['mermas/' + key] = { ts: Date.now(), fecha, id, nombre: p.nombre, cantidad: q, tipo, lugar, costoTotal: perdida, valor, nota };
     upd['productos/' + id + '/' + campo] = DB.inc(suma ? q : -q);
     if (perdida > 0) upd['resumen/dias/' + fecha + '/mermas'] = DB.inc(perdida);
-    try { await DB.update(upd); Modal.cerrar(); toast(suma ? 'Sobrante sumado al stock.' : 'Merma registrada.', 'ok'); } catch (e) { errMsg(e); }
+    if (obsequio) Object.assign(upd, obsequioPastoral(key, { fecha, cantidad: q, nombre: p.nombre, valor, nota }));
+    try { await DB.update(upd); Modal.cerrar(); toast(suma ? 'Sobrante sumado al stock.' : obsequio ? 'Obsequio registrado como gasto pastoral (' + money(valor) + ').' : 'Merma registrada.', 'ok'); } catch (e) { errMsg(e); }
+  }
+  /* Un obsequio sale del inventario y se registra como gasto pastoral a su costo (no sale dinero de la caja) */
+  function obsequioPastoral(mermaId, m) {
+    const k = DB.newKey('pastoral');
+    return { ['pastoral/' + k]: { ts: Date.now(), fecha: m.fecha, monto: m.valor, concepto: 'Obsequio: ' + m.cantidad + '× ' + m.nombre,
+      nota: m.nota || '', deCaja: false, origen: 'inventario', mermaId, estado: 'activo' } };
+  }
+  /* Bajas de inventario registradas (para revisar y reclasificar como obsequio) */
+  const TIPOS_MERMA = { vencido: 'Vencido', 'dañado': 'Dañado', faltante: 'Faltante en conteo', sobrante: 'Sobrante', obsequio: 'Obsequio' };
+  function listaBajas() {
+    const ls = Object.entries(mermas).map(([k, m]) => Object.assign({}, m, { mid: k })).filter(m => m && m.fecha).sort((a, b) => b.ts - a.ts).slice(0, 40);
+    if (!ls.length) return '<p class="nota">Aún no hay bajas registradas.</p>';
+    return `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th>Producto</th><th class="num">Cant.</th><th>Motivo</th><th class="num">Pérdida</th><th></th></tr></thead><tbody>
+      ${ls.map(m => { const perd = m.tipo !== 'sobrante' && m.tipo !== 'obsequio' && m.costoTotal > 0;
+        return `<tr><td>${esc(m.fecha)}</td><td>${esc(m.nombre)}${m.lugar ? ` <small class="gris">· ${esc(m.lugar)}</small>` : ''}${m.nota ? `<br><small class="gris">${esc(m.nota)}</small>` : ''}</td>
+        <td class="num">${m.cantidad}</td><td>${m.tipo === 'obsequio' ? '<span class="etq past">Obsequio</span>' : esc(TIPOS_MERMA[m.tipo] || m.tipo)}</td>
+        <td class="num">${perd ? money(m.costoTotal) : '—'}</td>
+        <td class="acc">${perd ? `<button class="btn btn-sec btn-peq" data-accion="a:aObsequio" data-id="${m.mid}">Fue un obsequio</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>`;
+  }
+  function modalAObsequio(id) {
+    const m = mermas[id]; if (!m) return; editId = id;
+    Modal.abrir(`<h2>Cambiar a obsequio</h2><p class="sub">${esc(m.fecha)} · ${m.cantidad}× ${esc(m.nombre)} · ${money(m.costoTotal)}</p>
+      <p class="nota">Esta baja deja de contar como pérdida (vuelve a la ganancia de ese día) y queda registrada como <b>gasto pastoral</b> por ${money(m.costoTotal)}, sin afectar la caja.</p>
+      <div class="form"><label>Nota (opcional)<input id="ob-nota" value="${esc(m.nota || '')}" placeholder="Ej: detalle para los jóvenes"></label></div>
+      <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-prim" data-accion="a:aObsequioOk">Sí, fue un obsequio</button></div>`, { ancho: 480 });
+  }
+  async function aObsequioOk() {
+    const id = editId, m = mermas[id]; if (!m || m.tipo === 'obsequio') { Modal.cerrar(); return; }
+    const nota = $('#ob-nota').value.trim(), valor = m.costoTotal || 0, upd = {};
+    upd['mermas/' + id + '/tipo'] = 'obsequio'; upd['mermas/' + id + '/tipoOriginal'] = m.tipo;
+    upd['mermas/' + id + '/costoTotal'] = 0; upd['mermas/' + id + '/valor'] = valor; upd['mermas/' + id + '/nota'] = nota;
+    if (valor > 0) upd['resumen/dias/' + m.fecha + '/mermas'] = DB.inc(-valor);
+    Object.assign(upd, obsequioPastoral(id, { fecha: m.fecha, cantidad: m.cantidad, nombre: m.nombre, valor, nota }));
+    try { await DB.update(upd); Modal.cerrar(); toast('Cambiado a obsequio: ' + money(valor) + ' pasan a gasto pastoral.', 'ok'); } catch (e) { errMsg(e); }
   }
 
   /* ---------- PRODUCTOS ---------- */
@@ -572,7 +615,7 @@
         <button class="btn btn-sec btn-peq" data-accion="a:pastMes" data-d="1" aria-label="Mes siguiente">▶</button></div>
       ${lista.length ? `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th>Concepto</th><th></th><th class="num">Valor</th><th></th></tr></thead><tbody>
         ${lista.map(x => { const an = x.estado === 'anulado'; return `<tr class="${an ? 'anulada' : ''}"><td>${esc(x.fecha)}</td><td>${esc(x.concepto)}${x.nota ? `<br><small class="gris">${esc(x.nota)}</small>` : ''}</td>
-          <td>${x.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(x.monto)}</td>
+          <td>${x.origen === 'inventario' ? '<span class="etq past">Obsequio</span>' : x.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(x.monto)}</td>
           <td class="acc">${an ? '<span class="etq mal">Anulado</span>' : `<button class="btn btn-sec btn-peq" data-accion="a:anularPastoral" data-id="${x.id}">Anular</button>`}</td></tr>`; }).join('')}
         <tr class="cat-fila"><td colspan="3">Total del mes</td><td class="num">${money(totMes)}</td><td></td></tr></tbody></table></div>`
         : '<div class="panel"><p class="nota" style="margin:0">No hay gastos pastorales en este mes.</p></div>'}`;
@@ -598,8 +641,12 @@
 
   /* ---------- CIERRE SEMANAL ---------- */
   function vCierre() {
-    return `<h2>Cierre de caja semanal</h2>
-      <p class="nota" style="margin-top:0">Se hace el viernes al terminar la jornada. <b>La base de la caja no se cuenta</b>: cuente solo el dinero que corresponde a ventas.</p>
+    const mesK = hoy().slice(0, 7), dm = suma(f => f.startsWith(mesK)).caja, dt = suma(() => true).caja;
+    return `<h2>Cierre de caja</h2>
+      <p class="nota" style="margin-top:0">Hágalo cada vez que cuente y recoja el dinero (al final del día o de la semana). El periodo empieza donde terminó el cierre anterior. <b>La base de la caja no se cuenta</b>: cuente solo el dinero que corresponde a ventas.
+        Si falta dinero, el faltante queda registrado y se descuenta de la ganancia de ese día; si sobra, se suma.</p>
+      <div class="tarjetas" style="margin-bottom:14px"><div class="tarjeta"><h4>Descuadre del mes</h4><div class="t-venta ${dm < 0 ? 'neg' : ''}">${dm > 0 ? '+' : ''}${money(dm)}</div><div class="det">${dm < 0 ? 'Faltante' : dm > 0 ? 'Sobrante' : 'Cuadra'}</div></div>
+        <div class="tarjeta"><h4>Descuadre acumulado</h4><div class="t-venta ${dt < 0 ? 'neg' : ''}">${dt > 0 ? '+' : ''}${money(dt)}</div><div class="det">${dt < 0 ? 'Faltante' : dt > 0 ? 'Sobrante' : 'Cuadra'}</div></div></div>
       <div class="panel"><div class="fila2" style="align-items:end"><label class="form-l">Periodo desde<input type="datetime-local" id="c-desde"></label>
       <div><button class="btn btn-sec" data-accion="a:calcCierre">Recalcular</button></div></div><div id="c-res" style="margin-top:14px"></div></div>
       <h3>Cierres anteriores</h3><div id="c-hist"></div>`;
@@ -610,16 +657,18 @@
       cierres = Object.entries(cs || {}).map(([id, c]) => Object.assign({ id }, c)).sort((a, b) => b.hastaTs - a.hastaTs);
     } catch (e) { cierres = []; }
     pintarHistorial();
-    if (cierres[0]) desdeTs = cierres[0].hastaTs + 1;
+    const ult = cierres.find(c => c.estado !== 'anulado');
+    if (ult) desdeTs = ult.hastaTs + 1;
     else { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); d.setHours(0, 0, 0, 0); desdeTs = d.getTime(); }
     const inp = $('#c-desde'); if (inp) inp.value = U.aLocalInput(desdeTs);
     calcularCierre();
   }
   function pintarHistorial() {
     const h = $('#c-hist'); if (!h) return;
-    h.innerHTML = cierres.length ? `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th class="num">Ventas</th><th class="num">Compras caja</th><th class="num">Pastoral</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead><tbody>
-      ${cierres.slice(0, 12).map(c => `<tr><td>${U.fechaHoraStr(c.hastaTs)}</td><td class="num">${money(c.ventas)}</td><td class="num">${money(c.compras)}</td><td class="num">${money(c.pastoral || 0)}</td><td class="num">${money(c.esperado)}</td><td class="num">${money(c.contado)}</td>
-        <td class="num"><span class="etq ${c.diferencia === 0 ? 'ok' : 'warn'}">${c.diferencia > 0 ? '+' : ''}${money(c.diferencia)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="nota">Aún no hay cierres.</p>';
+    h.innerHTML = cierres.length ? `<div style="overflow:auto"><table class="tabla"><thead><tr><th>Fecha</th><th class="num">Ventas</th><th class="num">Compras caja</th><th class="num">Pastoral</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th><th></th></tr></thead><tbody>
+      ${cierres.slice(0, 20).map(c => `<tr class="${c.estado === 'anulado' ? 'anulada' : ''}"><td>${U.fechaHoraStr(c.hastaTs)}${c.nota ? `<br><small class="gris">${esc(c.nota)}</small>` : ''}</td><td class="num">${money(c.ventas)}</td><td class="num">${money(c.compras)}</td><td class="num">${money(c.pastoral || 0)}</td><td class="num">${money(c.esperado)}</td><td class="num">${money(c.contado)}</td>
+        <td class="num"><span class="etq ${c.diferencia === 0 ? 'ok' : c.diferencia > 0 ? 'warn' : 'mal'}">${c.diferencia === 0 ? 'Cuadra' : (c.diferencia > 0 ? 'Sobran ' : 'Faltan ') + money(Math.abs(c.diferencia))}</span></td>
+        <td class="acc">${c.estado === 'anulado' ? '<span class="etq mal">Anulado</span>' : `<button class="btn btn-sec btn-peq" data-accion="a:anularCierre" data-id="${c.id}">Anular</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="nota">Aún no hay cierres.</p>';
   }
   async function calcularCierre() {
     const res = $('#c-res'); if (!res) return;
@@ -657,12 +706,28 @@
     if (!cierreCalc) return;
     if ($('#c-contado').value === '') { toast('Escriba el efectivo contado.', 'warn'); return; }
     const retiros = P($('#c-retiros').value), esperado = cierreCalc.ventas - cierreCalc.compras - cierreCalc.pastoral - retiros, contado = P($('#c-contado').value);
-    const key = DB.newKey('cierres');
+    const key = DB.newKey('cierres'), fecha = hoy(), diferencia = contado - esperado;
+    const upd = { ['cierres/' + key]: { ts: Date.now(), fecha, desdeTs: cierreCalc.desde, hastaTs: cierreCalc.hasta, ventas: cierreCalc.ventas, nVentas: cierreCalc.nVentas,
+      compras: cierreCalc.compras, pastoral: cierreCalc.pastoral, retiros, esperado, contado, diferencia, estado: 'activo', nota: $('#c-nota2').value.trim() } };
+    /* El descuadre queda en el resumen del día: un faltante resta de la ganancia, un sobrante suma */
+    if (diferencia !== 0) upd['resumen/dias/' + fecha + '/caja'] = DB.inc(diferencia);
     try {
-      await DB.update({ ['cierres/' + key]: { ts: Date.now(), fecha: hoy(), desdeTs: cierreCalc.desde, hastaTs: cierreCalc.hasta, ventas: cierreCalc.ventas, nVentas: cierreCalc.nVentas,
-        compras: cierreCalc.compras, pastoral: cierreCalc.pastoral, retiros, esperado, contado, diferencia: contado - esperado, nota: $('#c-nota2').value.trim() } });
-      toast('Cierre guardado.', 'ok'); iniciarCierre();
+      await DB.update(upd);
+      toast(diferencia === 0 ? 'Cierre guardado: la caja cuadra.' : 'Cierre guardado. ' + (diferencia < 0 ? 'Faltante' : 'Sobrante') + ' de ' + money(Math.abs(diferencia)) + ' registrado.', diferencia < 0 ? 'warn' : 'ok');
+      setTimeout(render, 150);
     } catch (e) { errMsg(e); }
+  }
+  function modalAnularCierre(id) {
+    const c = cierres.find(x => x.id === id); if (!c) return; editId = id;
+    Modal.abrir(`<h2>Anular cierre</h2><p class="sub">${U.fechaHoraStr(c.hastaTs)} · contado ${money(c.contado)} · ${c.diferencia === 0 ? 'cuadraba' : (c.diferencia < 0 ? 'faltante ' : 'sobrante ') + money(Math.abs(c.diferencia))}</p>
+      <p class="nota">Úselo si se equivocó al escribir el conteo. El descuadre deja de contar en la ganancia y el próximo cierre volverá a incluir este periodo.</p>
+      <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">No anular</button><button class="btn btn-mal" data-accion="a:anularCierreOk">Sí, anular</button></div>`, { ancho: 460 });
+  }
+  async function anularCierreOk() {
+    const c = cierres.find(x => x.id === editId); if (!c || c.estado === 'anulado') { Modal.cerrar(); return; }
+    const upd = { ['cierres/' + c.id + '/estado']: 'anulado', ['cierres/' + c.id + '/anuladoTs']: Date.now() };
+    if (c.diferencia) upd['resumen/dias/' + c.fecha + '/caja'] = DB.inc(-c.diferencia);
+    try { await DB.update(upd); Modal.cerrar(); toast('Cierre anulado.', 'ok'); setTimeout(render, 150); } catch (e) { errMsg(e); }
   }
 
   /* ---------- RESPALDO ---------- */
@@ -702,10 +767,11 @@
   async function recalcular() {
     if (!confirm('¿Reconstruir los totales a partir de las ventas guardadas?')) return;
     try {
-      const [v, m] = await Promise.all([DB.get('ventas'), DB.get('mermas')]), dias = {};
+      const [v, m, cs] = await Promise.all([DB.get('ventas'), DB.get('mermas'), DB.get('cierres')]), dias = {};
       const d = f => dias[f] || (dias[f] = { ventas: 0, costo: 0, nVentas: 0, mermas: 0 });
+      Object.values(cs || {}).forEach(c => { if (c && c.estado !== 'anulado' && c.diferencia && c.fecha) d(c.fecha).caja = (d(c.fecha).caja || 0) + c.diferencia; });
       Object.values(v || {}).filter(x => x.estado === 'activa').forEach(x => { const r = d(x.fecha); r.ventas += x.total; r.costo += x.costo || 0; r.nVentas += 1; });
-      Object.values(m || {}).forEach(x => { if (x.costoTotal > 0) d(x.fecha).mermas += x.costoTotal; });
+      Object.values(m || {}).forEach(x => { if (x.costoTotal > 0 && x.tipo !== 'obsequio') d(x.fecha).mermas += x.costoTotal; });
       await DB.update({ 'resumen/dias': Object.keys(dias).length ? dias : null });
       toast('Resúmenes recalculados.', 'ok');
     } catch (e) { errMsg(e); }
@@ -756,6 +822,10 @@
       case 'pastMes': { past.m += Number(el.dataset.d); if (past.m < 0) { past.m = 11; past.y--; } if (past.m > 11) { past.m = 0; past.y++; } render(); break; }
       case 'calcCierre': calcularCierre(); break;
       case 'guardarCierre': guardarCierre(); break;
+      case 'anularCierre': modalAnularCierre(el.dataset.id); break;
+      case 'anularCierreOk': anularCierreOk(); break;
+      case 'aObsequio': modalAObsequio(el.dataset.id); break;
+      case 'aObsequioOk': aObsequioOk(); break;
       case 'json': json().catch(errMsg); break;
       case 'csvVentas': csvVentas().catch(errMsg); break;
       case 'csvInv': csvInv(); break;

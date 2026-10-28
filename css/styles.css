@@ -268,6 +268,11 @@ b,strong{font-weight:650}
 .t-filas .gan-s.neg{color:var(--mal)}
 .t-filas .inv-s{color:var(--warn)}
 .t-filas .past-s{color:var(--pastoral)}
+.t-filas .t-sub{padding-top:2px}
+.t-filas .t-sub span{font-size:13px;padding-left:12px}
+.t-filas .t-sub b{font-size:14px;font-weight:600;color:var(--gris)}
+.t-filas .t-sub b.neg{color:var(--mal)}
+.etq.past{background:var(--pastoralbg);color:var(--pastoral)}
 .t-filas .t-saldo{margin-top:8px;padding-top:10px;border-top:1px dashed var(--sep)}
 .t-filas .t-saldo span{color:var(--tx);font-weight:600}
 .t-filas .t-saldo b.neg,.tarjeta .t-venta.neg{color:var(--mal)}
@@ -356,6 +361,7 @@ b,strong{font-weight:650}
 .dia .g.neg{color:var(--mal)}
 .dia .c{color:var(--warn);font-size:12px;font-weight:600}
 .dia .p{color:var(--pastoral);font-size:12px;font-weight:700}
+.dia .f{color:var(--mal);font-size:12px;font-weight:700}
 .dia.hoy .n{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;margin:-3px 0 0 -3px;
   border-radius:999px;background:var(--mal);color:#fff}
 .dia.sel{box-shadow:0 0 0 2px var(--acento)}
@@ -364,6 +370,7 @@ b,strong{font-weight:650}
 .leyenda .g{color:var(--ok);font-weight:700}
 .leyenda .c{color:var(--warn);font-weight:700}
 .leyenda .p{color:var(--pastoral);font-weight:700}
+.leyenda .f{color:var(--mal);font-weight:700}
 #dia-detalle{margin-top:14px}
 
 /* ---------- Aviso flotante ---------- */
@@ -391,7 +398,7 @@ b,strong{font-weight:650}
   .prod.conImg{min-height:196px}
   .fila2{grid-template-columns:1fr}
   .dia{min-height:62px;padding:5px}
-  .dia .v,.dia .g,.dia .c,.dia .p{font-size:11px}
+  .dia .v,.dia .g,.dia .c,.dia .p,.dia .f{font-size:11px}
   .admin-contenido{padding:16px 16px 48px}
   .admin-tabs{margin:12px 16px 0;max-width:calc(100% - 32px)}
 }
