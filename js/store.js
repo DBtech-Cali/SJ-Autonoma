@@ -18,7 +18,7 @@
   function lineas() {
     return Object.entries(cart).map(([id, q]) => {
       const p = S.productos[id];
-      return p ? { id, nombre: p.nombre, categoria: p.categoria || '', cantidad: q, precio: p.precio || 0, costo: p.costo || 0, stock: p.stock || 0 } : null;
+      return p ? { id, nombre: p.nombre, categoria: p.categoria || '', cantidad: q, precio: p.precio || 0, costo: p.costo || 0, stock: p.stock || 0, sinCosto: p.sinCosto || 0 } : null;
     }).filter(Boolean);
   }
   const total = () => lineas().reduce((a, l) => a + l.precio * l.cantidad, 0);
@@ -176,18 +176,20 @@
     for (const l of ls) {
       if (l.cantidad > l.stock) { cart[l.id] = Math.max(0, l.stock); normalizar(); render(); flujo.error = 'De "' + l.nombre + '" ya solo quedan ' + l.stock + '. Revisa tu compra.'; flujo.paso = 'pago'; pintarFlujo(); return; }
     }
-    const t = total(), costo = ls.reduce((a, l) => a + l.costo * l.cantidad, 0);
+    /* Las unidades del inventario inicial (heredado) se venden primero y no tienen costo */
+    ls.forEach(l => { l.h = Math.min(l.cantidad, Math.max(0, l.sinCosto)); });
+    const t = total(), costo = ls.reduce((a, l) => a + l.costo * (l.cantidad - l.h), 0);
     const pago = flujo.pago == null ? t : flujo.pago;
     if (pago < t) { flujo.error = 'El valor con el que pagas no alcanza.'; pintarFlujo(); return; }
     const fecha = U.fechaStr(), ts = Date.now(), key = DB.newKey('ventas');
     const venta = {
       fecha, ts, codigo: flujo.codigo, nombre: flujo.trab.nombre, tipo: flujo.trab.tipo || 'trabajador',
-      items: ls.map(l => ({ id: l.id, nombre: l.nombre, categoria: l.categoria, cantidad: l.cantidad, precio: l.precio, costo: l.costo })),
+      items: ls.map(l => Object.assign({ id: l.id, nombre: l.nombre, categoria: l.categoria, cantidad: l.cantidad, precio: l.precio, costo: l.costo }, l.h ? { sinCosto: l.h } : {})),
       total: t, costo, ganancia: t - costo, pago, cambio: pago - t, estado: 'activa'
     };
     const upd = {};
     upd['ventas/' + key] = venta;
-    ls.forEach(l => { upd['productos/' + l.id + '/stock'] = DB.inc(-l.cantidad); });
+    ls.forEach(l => { upd['productos/' + l.id + '/stock'] = DB.inc(-l.cantidad); if (l.h) upd['productos/' + l.id + '/sinCosto'] = DB.inc(-l.h); });
     upd['resumen/dias/' + fecha + '/ventas'] = DB.inc(t);
     upd['resumen/dias/' + fecha + '/costo'] = DB.inc(costo);
     upd['resumen/dias/' + fecha + '/nVentas'] = DB.inc(1);

@@ -36,7 +36,7 @@
     });
     r.ganancia = r.ventas - r.costo - r.mermas + r.caja;
     r.invertido = 0; r.nCompras = 0;
-    Object.values(repos).forEach(c => { if (c && c.fecha && filtro(c.fecha)) { r.invertido += c.total || 0; r.nCompras++; } });
+    Object.values(repos).forEach(c => { if (c && c.fecha && !c.herencia && filtro(c.fecha)) { r.invertido += c.total || 0; r.nCompras++; } });
     r.pastoral = 0; r.nPastoral = 0;
     pastoralesActivos().forEach(g => { if (filtro(g.fecha)) { r.pastoral += g.monto || 0; r.nPastoral++; } });
     r.disponible = r.ganancia - r.pastoral;
@@ -183,12 +183,14 @@
           <td class="num">${money(v.total)}</td><td class="num">${money(v.ganancia)}</td>
           <td class="acc">${an ? `<span class="etq mal">Anulada</span>` : `<button class="btn btn-sec btn-peq" data-accion="a:anular" data-id="${v.id}">Anular</button>`}</td></tr>`;
       }).join('')}</tbody></table></div>`;
-    const compD = Object.values(repos).filter(c => c && c.fecha === calDia).sort((a, b) => a.ts - b.ts);
+    const compD = Object.values(repos).filter(c => c && c.fecha === calDia && !c.herencia).sort((a, b) => a.ts - b.ts);
+    const herD = Object.values(repos).filter(c => c && c.fecha === calDia && c.herencia);
     const pastD = pastoralesActivos().filter(g => g.fecha === calDia).sort((a, b) => a.ts - b.ts);
     const tC = compD.reduce((a, c) => a + (c.total || 0), 0), tP = pastD.reduce((a, g) => a + (g.monto || 0), 0);
     const extraHtml = (compD.length ? `<h4 class="sub-h">Compras de reposición · <span style="color:var(--warn)">${money(tC)}</span></h4>
       <div style="overflow:auto"><table class="tabla"><tbody>${compD.map(c => `<tr><td>${U.horaStr(c.ts)}</td><td>${U.arr(c.items).map(i => i.cantidad + '× ' + esc(i.nombre)).join(', ')}${c.nota ? ` <small class="gris">· ${esc(c.nota)}</small>` : ''}</td>
         <td>${c.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(c.total)}</td></tr>`).join('')}</tbody></table></div>` : '')
+      + (herD.length ? `<h4 class="sub-h">Inventario inicial heredado (sin costo)</h4>${herD.map(c => `<p class="nota" style="margin:4px 0">${U.arr(c.items).reduce((a, i) => a + i.cantidad, 0)} unidades de ${U.arr(c.items).length} productos · valor de referencia ${money(c.valorReferencia || 0)}</p>`).join('')}` : '')
       + (pastD.length ? `<h4 class="sub-h">Gastos pastorales · <span style="color:var(--pastoral)">${money(tP)}</span></h4>
       <div style="overflow:auto"><table class="tabla"><tbody>${pastD.map(g => `<tr><td>${esc(g.concepto)}${g.nota ? ` <small class="gris">· ${esc(g.nota)}</small>` : ''}</td>
         <td>${g.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td><td class="num">${money(g.monto)}</td></tr>`).join('')}</tbody></table></div>` : '');
@@ -215,7 +217,7 @@
       upd['ventas/' + anularId + '/estado'] = 'anulada';
       upd['ventas/' + anularId + '/anuladaTs'] = Date.now();
       upd['ventas/' + anularId + '/motivo'] = motivo;
-      U.arr(v.items).forEach(i => { if (S.productos[i.id]) upd['productos/' + i.id + '/stock'] = DB.inc(i.cantidad); });
+      U.arr(v.items).forEach(i => { if (S.productos[i.id]) { upd['productos/' + i.id + '/stock'] = DB.inc(i.cantidad); if (i.sinCosto) upd['productos/' + i.id + '/sinCosto'] = DB.inc(i.sinCosto); } });
       upd['resumen/dias/' + v.fecha + '/ventas'] = DB.inc(-v.total);
       upd['resumen/dias/' + v.fecha + '/costo'] = DB.inc(-(v.costo || 0));
       upd['resumen/dias/' + v.fecha + '/nVentas'] = DB.inc(-1);
@@ -334,13 +336,16 @@
     if (!p || !(q > 0)) { err.textContent = 'Escriba una cantidad mayor a 0.'; return; }
     const suma = tipo === 'sobrante', lugar = $('#mm-lugar').value === 'bodega' ? 'bodega' : 'tienda', campo = lugar === 'bodega' ? 'bodega' : 'stock', hay = p[campo] || 0;
     if (!suma && q > hay) { err.textContent = 'La cantidad es mayor a lo que hay en la ' + lugar + ' (' + hay + ').'; return; }
-    const obsequio = tipo === 'obsequio', valor = suma ? 0 : q * (p.costo || 0), perdida = obsequio ? 0 : valor, fecha = hoy(), key = DB.newKey('mermas');
+    /* Las unidades del inventario inicial (heredado) salen primero y no tienen costo */
+    const h = suma ? 0 : Math.min(q, Math.max(0, p.sinCosto || 0));
+    const obsequio = tipo === 'obsequio', valor = suma ? 0 : (q - h) * (p.costo || 0), perdida = obsequio ? 0 : valor, fecha = hoy(), key = DB.newKey('mermas');
     const nota = $('#mm-nota').value.trim(), upd = {};
-    upd['mermas/' + key] = { ts: Date.now(), fecha, id, nombre: p.nombre, cantidad: q, tipo, lugar, costoTotal: perdida, valor, nota };
+    upd['mermas/' + key] = Object.assign({ ts: Date.now(), fecha, id, nombre: p.nombre, cantidad: q, tipo, lugar, costoTotal: perdida, valor, nota }, h ? { sinCosto: h } : {});
     upd['productos/' + id + '/' + campo] = DB.inc(suma ? q : -q);
+    if (h) upd['productos/' + id + '/sinCosto'] = DB.inc(-h);
     if (perdida > 0) upd['resumen/dias/' + fecha + '/mermas'] = DB.inc(perdida);
-    if (obsequio) Object.assign(upd, obsequioPastoral(key, { fecha, cantidad: q, nombre: p.nombre, valor, nota }));
-    try { await DB.update(upd); Modal.cerrar(); toast(suma ? 'Sobrante sumado al stock.' : obsequio ? 'Obsequio registrado como gasto pastoral (' + money(valor) + ').' : 'Merma registrada.', 'ok'); } catch (e) { errMsg(e); }
+    if (obsequio && valor > 0) Object.assign(upd, obsequioPastoral(key, { fecha, cantidad: q - h, nombre: p.nombre, valor, nota }));
+    try { await DB.update(upd); Modal.cerrar(); toast(suma ? 'Sobrante sumado al stock.' : obsequio ? (valor > 0 ? 'Obsequio registrado como gasto pastoral (' + money(valor) + ').' : 'Obsequio registrado (inventario inicial, sin costo).') : 'Merma registrada.', 'ok'); } catch (e) { errMsg(e); }
   }
   /* Un obsequio sale del inventario y se registra como gasto pastoral a su costo (no sale dinero de la caja) */
   function obsequioPastoral(mermaId, m) {
@@ -741,6 +746,7 @@
       <p class="nota">La copia JSON se puede volver a cargar desde la consola de Firebase (Realtime Database → ⋮ → Importar JSON).</p></div>
       <h3>Mantenimiento</h3><div class="panel"><div class="barra">
         <button class="btn btn-sec" data-accion="a:recalcular">Recalcular resúmenes de ventas</button>
+        <button class="btn btn-sec" data-accion="a:ajuste">Inventario inicial sin costo…</button>
         ${!prods().length ? '<button class="btn btn-sec" data-accion="a:seed">Cargar productos iniciales</button>' : ''}
         ${DB.modo === 'demo' ? '<button class="btn btn-mal" data-accion="a:resetDemo">Borrar datos de la demostración</button>' : ''}</div>
       <p class="nota">“Recalcular” reconstruye los totales de hoy, mes y acumulado a partir de las ventas guardadas. Úselo solo si ve números que no cuadran.</p>
@@ -760,20 +766,125 @@
     U.descargar('inventario-' + hoy() + '.csv', csv(filas), 'text/csv;charset=utf-8');
   }
   async function json() {
-    const [pr, tr, ve, re, me, ci, pa, tl] = await Promise.all(['productos', 'trabajadores', 'ventas', 'reposiciones', 'mermas', 'cierres', 'pastoral', 'traslados'].map(p => DB.get(p)));
-    const todo = { productos: pr, trabajadores: tr, ventas: ve, reposiciones: re, mermas: me, cierres: ci, pastoral: pa, traslados: tl };
+    const [pr, tr, ve, re, me, ci, pa, tl, aj] = await Promise.all(['productos', 'trabajadores', 'ventas', 'reposiciones', 'mermas', 'cierres', 'pastoral', 'traslados', 'ajustes'].map(p => DB.get(p)));
+    const todo = { productos: pr, trabajadores: tr, ventas: ve, reposiciones: re, mermas: me, cierres: ci, pastoral: pa, traslados: tl, ajustes: aj };
     U.descargar('copia-tienda-san-jose-' + hoy() + '.json', JSON.stringify(todo, null, 1), 'application/json');
   }
   async function recalcular() {
     if (!confirm('¿Reconstruir los totales a partir de las ventas guardadas?')) return;
-    try {
+    try { await reconstruirResumen(); toast('Resúmenes recalculados.', 'ok'); } catch (e) { errMsg(e); }
+  }
+  async function reconstruirResumen() {
+    {
       const [v, m, cs] = await Promise.all([DB.get('ventas'), DB.get('mermas'), DB.get('cierres')]), dias = {};
       const d = f => dias[f] || (dias[f] = { ventas: 0, costo: 0, nVentas: 0, mermas: 0 });
       Object.values(cs || {}).forEach(c => { if (c && c.estado !== 'anulado' && c.diferencia && c.fecha) d(c.fecha).caja = (d(c.fecha).caja || 0) + c.diferencia; });
       Object.values(v || {}).filter(x => x.estado === 'activa').forEach(x => { const r = d(x.fecha); r.ventas += x.total; r.costo += x.costo || 0; r.nVentas += 1; });
       Object.values(m || {}).forEach(x => { if (x.costoTotal > 0 && x.tipo !== 'obsequio') d(x.fecha).mermas += x.costoTotal; });
       await DB.update({ 'resumen/dias': Object.keys(dias).length ? dias : null });
-      toast('Resúmenes recalculados.', 'ok');
+    }
+  }
+
+  /* ---------- AJUSTE: INVENTARIO INICIAL SIN COSTO ----------
+     Las compras marcadas como herencia quedan en $0 (se guarda su lista y su valor de referencia).
+     Las unidades heredadas se consideran vendidas o dadas de baja primero (en orden de fecha), con costo $0.
+     Se puede volver a ejecutar: siempre recalcula desde los datos originales. */
+  let ajusteDatos = null;
+  async function modalAjuste() {
+    Modal.abrir('<h2>Inventario inicial sin costo</h2><p class="nota">Cargando datos…</p>', { ancho: 760 });
+    try {
+      const [ve, me, re, ci] = await Promise.all(['ventas', 'mermas', 'reposiciones', 'cierres'].map(x => DB.get(x)));
+      ajusteDatos = { ventas: ve || {}, mermas: me || {}, compras: re || {}, cierres: ci || {} };
+    } catch (e) { errMsg(e); Modal.cerrar(); return; }
+    const compras = Object.entries(ajusteDatos.compras).map(([k, c]) => Object.assign({}, c, { k })).sort((a, b) => a.ts - b.ts);
+    const cierresL = Object.entries(ajusteDatos.cierres).map(([k, c]) => Object.assign({}, c, { k })).sort((a, b) => a.ts - b.ts);
+    const sumaItems = c => U.arr(c.items).reduce((a, i) => a + (i.cantidad || 0) * (i.costo || 0), 0);
+    Modal.set(`<h2>Inventario inicial sin costo</h2>
+      <p class="nota" style="margin-top:0">Marque las compras que en realidad fueron <b>inventario heredado</b> (no se pagaron). Quedarán en $0, se conservará su lista de productos como registro, y las ventas y bajas de esas unidades no tendrán costo. Las ventas no cambian.</p>
+      <h3 style="margin-top:8px">Compras</h3><div class="scroll-modal"><table class="tabla"><tbody>
+      ${compras.map(c => `<tr><td><label class="chk"><input type="checkbox" class="aj-compra" value="${c.k}" ${c.herencia ? 'checked' : ''}> ${esc(c.fecha)}</label></td>
+        <td>${U.arr(c.items).length} productos · ${U.arr(c.items).reduce((a, i) => a + i.cantidad, 0)} unid.</td><td>${c.deCaja !== false ? '<span class="etq gris">De la caja</span>' : ''}</td>
+        <td class="num">${money(c.herencia ? c.valorReferencia : sumaItems(c))}</td></tr>`).join('')}</tbody></table></div>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="aj-iniciales" checked> Incluir las unidades con las que se crearon los productos (antes de cualquier compra)</label>
+      <h3>Cierres de caja a anular</h3>
+      <p class="nota" style="margin-top:0">Marque los cierres cuyo descuadre no fue real (por ejemplo, compras pagadas desde otra caja).</p>
+      <div class="scroll-modal"><table class="tabla"><tbody>${cierresL.map(c => `<tr class="${c.estado === 'anulado' ? 'anulada' : ''}"><td><label class="chk"><input type="checkbox" class="aj-cierre" value="${c.k}" ${c.estado === 'anulado' ? 'disabled' : ''}> ${U.fechaHoraStr(c.hastaTs)}</label></td>
+        <td class="num">esperado ${money(c.esperado)}</td><td class="num">contado ${money(c.contado)}</td><td class="num">${c.diferencia > 0 ? '+' : ''}${money(c.diferencia)}</td></tr>`).join('')}</tbody></table></div>
+      <div id="aj-res" style="margin-top:12px"></div>
+      <div id="m-err" class="error-msg"></div>
+      <div class="acciones"><button class="btn btn-sec" data-accion="cerrar">Cancelar</button><button class="btn btn-sec" data-accion="a:ajusteCalc">Ver cómo quedaría</button><button class="btn btn-prim" data-accion="a:ajusteOk">Aplicar ajuste</button></div>`);
+  }
+  function calcAjuste() {
+    const D = ajusteDatos, sel = new Set($$('.aj-compra:checked').map(x => x.value)), anular = new Set($$('.aj-cierre:checked').map(x => x.value));
+    const her = {}, valorRef = {}, nombres = {};
+    const add = (o, k, n) => { o[k] = (o[k] || 0) + n; };
+    /* Unidades con las que se creó cada producto = existencias + salidas − entradas registradas */
+    const iniciales = {};
+    if ($('#aj-iniciales') && $('#aj-iniciales').checked) {
+      const neto = {};
+      Object.entries(S.productos).forEach(([id, p]) => add(neto, id, (p.stock || 0) + (p.bodega || 0)));
+      Object.values(D.ventas).forEach(v => { if (v && v.estado === 'activa') U.arr(v.items).forEach(i => { add(neto, i.id, i.cantidad); nombres[i.id] = i.nombre; }); });
+      Object.values(D.mermas).forEach(m => { if (m) { add(neto, m.id, m.tipo === 'sobrante' ? -m.cantidad : m.cantidad); nombres[m.id] = m.nombre; } });
+      Object.values(D.compras).forEach(c => U.arr(c.items).forEach(i => { add(neto, i.id, -i.cantidad); nombres[i.id] = i.nombre; }));
+      Object.entries(neto).forEach(([id, n]) => { if (n > 0) iniciales[id] = n; });
+    }
+    Object.entries(iniciales).forEach(([id, n]) => add(her, id, n));
+    Object.entries(D.compras).forEach(([k, c]) => { if (sel.has(k)) U.arr(c.items).forEach(i => { add(her, i.id, i.cantidad); nombres[i.id] = i.nombre; }); valorRef[k] = U.arr(c.items).reduce((a, i) => a + i.cantidad * i.costo, 0); });
+    /* Salidas en orden de fecha: las heredadas se consumen primero */
+    const ev = [];
+    Object.entries(D.ventas).forEach(([k, v]) => { if (v && v.estado === 'activa') U.arr(v.items).forEach((i, n) => ev.push({ ts: v.ts, t: 'v', k, n, i })); });
+    Object.entries(D.mermas).forEach(([k, m]) => { if (m && m.tipo !== 'sobrante') ev.push({ ts: m.ts, t: 'm', k, m }); });
+    ev.sort((a, b) => a.ts - b.ts);
+    const quedan = Object.assign({}, her), upd = {}, ventasCosto = {}, r = { costoAntes: 0, costoDespues: 0, mermaAntes: 0, mermaDespues: 0, vendidas: 0, salidas: 0 };
+    ev.forEach(e => {
+      if (e.t === 'v') {
+        const q = e.i.cantidad, h = Math.min(q, Math.max(0, quedan[e.i.id] || 0)); quedan[e.i.id] = (quedan[e.i.id] || 0) - h;
+        r.costoAntes += q * (e.i.costo || 0) - (e.i.sinCosto || 0) * (e.i.costo || 0);
+        upd['ventas/' + e.k + '/items/' + e.n + '/sinCosto'] = h || null;
+        add(ventasCosto, e.k, (q - h) * (e.i.costo || 0)); r.vendidas += h;
+      } else {
+        const m = e.m, q = m.cantidad, h = Math.min(q, Math.max(0, quedan[m.id] || 0)); quedan[m.id] = (quedan[m.id] || 0) - h;
+        const unit = m.costoUnit != null ? m.costoUnit : (q ? Math.round((m.tipo === 'obsequio' ? (m.valor || 0) : (m.costoTotal || 0)) / q) : 0);
+        r.mermaAntes += m.tipo === 'obsequio' ? 0 : (m.costoTotal || 0);
+        const nuevo = m.tipo === 'obsequio' ? 0 : (q - h) * unit; r.mermaDespues += nuevo; r.salidas += h;
+        upd['mermas/' + e.k + '/costoUnit'] = unit; upd['mermas/' + e.k + '/sinCosto'] = h || null;
+        upd['mermas/' + e.k + '/costoTotal'] = nuevo; upd['mermas/' + e.k + '/valor'] = (q - h) * unit;
+      }
+    });
+    Object.entries(ventasCosto).forEach(([k, c]) => { const v = D.ventas[k]; upd['ventas/' + k + '/costo'] = c; upd['ventas/' + k + '/ganancia'] = v.total - c; r.costoDespues += c; });
+    Object.entries(D.compras).forEach(([k, c]) => {
+      if (sel.has(k)) { upd['reposiciones/' + k + '/herencia'] = true; upd['reposiciones/' + k + '/valorReferencia'] = valorRef[k]; upd['reposiciones/' + k + '/total'] = 0; if (!c.herencia) upd['reposiciones/' + k + '/totalOriginal'] = c.total; }
+      else if (c.herencia) { upd['reposiciones/' + k + '/herencia'] = null; upd['reposiciones/' + k + '/total'] = c.valorReferencia || 0; upd['reposiciones/' + k + '/valorReferencia'] = null; }
+    });
+    Object.keys(S.productos).forEach(id => { upd['productos/' + id + '/sinCosto'] = Math.max(0, quedan[id] || 0) || null; });
+    anular.forEach(k => { upd['cierres/' + k + '/estado'] = 'anulado'; upd['cierres/' + k + '/anuladoTs'] = Date.now(); });
+    const ventasTot = Object.values(D.ventas).filter(v => v && v.estado === 'activa').reduce((a, v) => a + v.total, 0);
+    r.ventas = ventasTot; r.valorHerencia = Object.keys(valorRef).filter(k => sel.has(k)).reduce((a, k) => a + valorRef[k], 0);
+    r.quedan = Object.values(quedan).reduce((a, n) => a + Math.max(0, n), 0); r.iniciales = iniciales; r.nombres = nombres; r.nCompras = sel.size; r.nCierres = anular.size;
+    return { upd, r };
+  }
+  function verAjuste() {
+    if (!ajusteDatos) return null;
+    const a = calcAjuste(), r = a.r, ini = Object.entries(r.iniciales);
+    $('#aj-res').innerHTML = `<table class="tabla"><thead><tr><th></th><th class="num">Ahora</th><th class="num">Con el ajuste</th></tr></thead><tbody>
+      <tr><td>Ventas</td><td class="num">${money(r.ventas)}</td><td class="num">${money(r.ventas)}</td></tr>
+      <tr><td>Costo de lo vendido</td><td class="num">${money(r.costoAntes)}</td><td class="num">${money(r.costoDespues)}</td></tr>
+      <tr><td>Pérdidas por bajas</td><td class="num">${money(r.mermaAntes)}</td><td class="num">${money(r.mermaDespues)}</td></tr>
+      <tr class="cat-fila"><td>Ganancia (sin descuadres de caja)</td><td class="num">${money(r.ventas - r.costoAntes - r.mermaAntes)}</td><td class="num">${money(r.ventas - r.costoDespues - r.mermaDespues)}</td></tr></tbody></table>
+      <p class="nota">Valor de referencia de lo heredado: <b>${money(r.valorHerencia)}</b> (${r.nCompras} compra${r.nCompras === 1 ? '' : 's'}).
+        Unidades heredadas vendidas: <b>${r.vendidas}</b> · dadas de baja u obsequiadas: <b>${r.salidas}</b> · quedan: <b>${r.quedan}</b>.
+        ${ini.length ? `<br>Unidades iniciales incluidas: ${ini.map(([id, n]) => esc(r.nombres[id] || (S.productos[id] || {}).nombre || id) + ' ' + n).join(', ')}.` : ''}
+        ${r.nCierres ? `<br>Cierres a anular: <b>${r.nCierres}</b>.` : ''} Después se recalculan los resúmenes.</p>`;
+    return a;
+  }
+  async function aplicarAjuste() {
+    const a = verAjuste(); if (!a) return;
+    if (!confirm('¿Aplicar el ajuste? Antes de hacerlo, descargue la copia completa (JSON) por si necesita volver atrás.')) return;
+    const key = DB.newKey('ajustes');
+    a.upd['ajustes/' + key] = { ts: Date.now(), fecha: hoy(), tipo: 'inventario inicial sin costo', valorHerencia: a.r.valorHerencia, costoAntes: a.r.costoAntes, costoDespues: a.r.costoDespues, cierresAnulados: a.r.nCierres };
+    try {
+      await DB.update(a.upd); await reconstruirResumen();
+      Modal.cerrar(); ajusteDatos = null; toast('Ajuste aplicado y resúmenes recalculados.', 'ok'); setTimeout(render, 150);
     } catch (e) { errMsg(e); }
   }
   async function seed() {
@@ -830,6 +941,9 @@
       case 'csvVentas': csvVentas().catch(errMsg); break;
       case 'csvInv': csvInv(); break;
       case 'recalcular': recalcular(); break;
+      case 'ajuste': modalAjuste(); break;
+      case 'ajusteCalc': verAjuste(); break;
+      case 'ajusteOk': aplicarAjuste(); break;
       case 'seed': seed(); break;
       case 'resetDemo': if (confirm('¿Borrar todos los datos de la demostración?')) { DB.reiniciarDemo(); S.trabajadores = {}; toast('Datos borrados.'); render(); } break;
     }
