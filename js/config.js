@@ -26,6 +26,9 @@ window.TSJ_CONFIG = {
   // Clave PROVISIONAL: tienda2026   -> cámbiela abriendo generar-clave.html
   claveAdminHash: '9b9b81af02c3d56066e4690c9cdd438982c71009b3c3a17aee2b82a979eea0bc',
 
+  // Plata que había en la caja de bodega cuando empezó la tienda (la caja de la tienda, con la base para el cambio, no se cuenta)
+  saldoInicialCaja: 0,
+
   // Billetes que aparecen para calcular el cambio
   billetes: [2000, 5000, 10000, 20000, 50000],
 

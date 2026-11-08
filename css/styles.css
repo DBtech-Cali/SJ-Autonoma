@@ -277,6 +277,8 @@ b,strong{font-weight:650}
 .t-filas .t-saldo span{color:var(--tx);font-weight:600}
 .t-filas .t-saldo b.neg,.tarjeta .t-venta.neg{color:var(--mal)}
 .tarjeta .t-past{color:var(--pastoral)}
+.tarjeta .t-plata{color:var(--ok)}
+.tarjeta .t-plata.neg{color:var(--mal)}
 .sub-h{font-size:16px;font-weight:700;margin:18px 0 8px}
 .alerta-caja{background:var(--warnbg);color:var(--warn);border-radius:var(--rad-s);padding:12px 16px;margin:14px 0;font-weight:600;
   display:flex;gap:12px;align-items:center;flex-wrap:wrap}
